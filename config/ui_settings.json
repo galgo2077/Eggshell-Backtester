@@ -1,0 +1,19 @@
+{
+    "interval": "1h",
+    "balance": "1000",
+    "size": "1",
+    "start_date": "2025-01-01",
+    "end_date": "",
+    "accumulate": true,
+    "max_pos": "5",
+    "max_pos_enabled": false,
+    "assets": [
+        "BTCUSDT"
+    ],
+    "strat_ENABLED_EMA": true,
+    "strat_FAST_EMA": "9",
+    "strat_SLOW_EMA": "21",
+    "strat_ENABLED_SELL": false,
+    "strat_BUY_LEVEL": "30",
+    "strat_SELL_LEVEL": "70"
+}

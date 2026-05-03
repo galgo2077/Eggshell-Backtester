@@ -1,0 +1,6 @@
+textual
+pandas
+python-binance
+rich
+python-dotenv
+pandas-ta-classic
