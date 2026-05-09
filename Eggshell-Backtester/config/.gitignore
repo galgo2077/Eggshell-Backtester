@@ -1,0 +1,26 @@
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches and Local Services
+src/binance_service/cache/*.pkl
+.cache/
+
+# Environment
+.venv/
+venv/
+ENV/
+.env
+
+# System specific
+.DS_Store
+Thumbs.db
+
+# Runtime outputs and reports
+reports/charts/*.html
+reports/errors/error.log
+reports/sessions/
+
+# stategy
+src/strategies/Elliot_bollinger/

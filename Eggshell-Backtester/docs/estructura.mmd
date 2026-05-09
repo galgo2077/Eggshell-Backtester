@@ -1,0 +1,48 @@
+%% Eggshell Backtester — Module Dependency Map
+%% Render at https://mermaid.live or open reports/estructura.html
+
+flowchart TD
+
+  MAIN["main.py · CLI runner"]
+
+  subgraph UI["UI Layer"]
+    TUI["ui/tui.py · BacktestApp"]
+  end
+
+  subgraph CORE["Core Engine"]
+    SL["core/signal_logic.py · SignalLogic"]
+    BE["core/backtest_engine.py · BacktestEngine"]
+    CONST["core/constants.py · CONFIG_REGISTRY / STRATEGY_SCHEMAS"]
+  end
+
+  subgraph DATA["Binance Data Layer"]
+    DF["binance_service/dataframe.py · Dataframe (cache + fetch)"]
+    CONN["binance_service/connect.py · Connect"]
+  end
+
+  subgraph STRAT["Strategies"]
+    EBS["Elliot_bollinger/strategy.py · ElliotBollingerStrategy"]
+    EBC["Elliot_bollinger/constants.py"]
+    EMAS["Ema_cross/strategy.py · EMACrossStrategy"]
+    EMAC["Ema_cross/constants.py"]
+  end
+
+  subgraph EXT["Third-party"]
+    VBT["vectorbt"]
+    TEXTUAL["textual"]
+    RICH["rich"]
+    PLOTLY["plotly"]
+    BAPI["python-binance"]
+    OLLAMA["ollama (localhost:11434)"]
+  end
+
+  MAIN --> TUI & DF & SL & BE
+  TUI  --> DF & SL & BE & CONST & TEXTUAL
+  SL   --> EMAS & EBS
+  BE   --> CONST & VBT & PLOTLY
+  DF   --> CONST & CONN
+  CONN --> BAPI
+  CONST --> EBC & EMAC
+  EBS  --> EBC & OLLAMA
+  EMAS --> EMAC
+  MAIN --> RICH

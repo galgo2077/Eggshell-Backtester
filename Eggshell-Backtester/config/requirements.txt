@@ -1,0 +1,8 @@
+pandas
+numpy
+vectorbt
+textual
+rich
+python-binance
+python-dotenv
+pandas-ta-classic

@@ -1,0 +1,26 @@
+# AI assistant and external IDE tools
+.claude/
+
+# Python bytecode
+__pycache__/
+*.py[cod]
+*$py.class
+
+# Caches and Local Services
+Eggshell-Backtester/src/binance_service/cache/*.pkl
+.cache/
+
+# Environment
+.venv/
+venv/
+ENV/
+.env
+
+# System specific
+.DS_Store
+Thumbs.db
+
+# Runtime outputs and reports
+Eggshell-Backtester/reports/charts/*.html
+Eggshell-Backtester/reports/errors/error.log
+Eggshell-Backtester/reports/sessions/
