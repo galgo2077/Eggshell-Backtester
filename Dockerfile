@@ -1,28 +1,28 @@
 # Use official slim Python 3.11 image
 FROM python:3.11-slim
 
-# Prevent bytecode files and force buffered log outputs
+# Set runtime environment config
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
-ENV PYTHONPATH=/app/Eggshell-Backtester/src
+ENV PYTHONPATH=/app/src
 
-# Install necessary build utilities for high-performance compute libraries (numpy, vectorbt)
+# Install build tools for numerical acceleration packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
     build-essential \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Define working container scope
+# Designate container base operations
 WORKDIR /app
 
-# Pre-seed dependency list to optimize docker caching pipeline
-COPY Eggshell-Backtester/config/requirements.txt ./Eggshell-Backtester/config/requirements.txt
+# Optimized Dependency Cache Injection (Flat layout compatible)
+COPY config/requirements.txt ./config/requirements.txt
 
-# Install the numerical stack libraries without caching local downloads
-RUN pip install --no-cache-dir -r Eggshell-Backtester/config/requirements.txt
+# Direct library stack resolution
+RUN pip install --no-cache-dir -r config/requirements.txt
 
-# Merge remaining software assets into container
+# Bulk merge application sources
 COPY . .
 
-# Establish runtime executable vector (Requires -it run flags for full viewport experience)
-CMD ["python", "Eggshell-Backtester/src/main.py"]
+# System Command Target (TUI integration enabled)
+CMD ["python", "src/main.py"]

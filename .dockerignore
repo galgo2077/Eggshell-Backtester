@@ -1,18 +1,19 @@
-# Ignore dynamic meta folders
+# Meta exclusions
 .git/
 .claude/
 
-# Ignore Python garbage
+# Dynamic Python cache systems
 __pycache__/
 *.py[cod]
 .venv/
 venv/
 ENV/
 
-# Exclude output streams
-Eggshell-Backtester/reports/
-Eggshell-Backtester/src/binance_service/cache/*.pkl
+# Active runtime streams
+reports/
+src/binance_service/cache/*.pkl
 
-# OS pollution
+# Local dev debris
 .DS_Store
 Thumbs.db
+Eggshell-Backtester/
