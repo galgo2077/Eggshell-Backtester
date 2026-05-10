@@ -4,7 +4,7 @@
     "interval-select": "1h",
     "balance-input": "1000",
     "size-input": "20",
-    "start-date-input": "2023-01-01",
+    "start-date-input": "2025-01-01",
     "end-date-input": "",
     "cooldown-input": "0",
     "assets": [
@@ -15,7 +15,7 @@
     "opt_ema_cross_slow_ema": "21",
     "opt_ema_cross_enabled_mfi": false,
     "opt_ema_cross_mfi_length": "14",
-    "opt_ema_cross_enabled_sell": false,
+    "opt_ema_cross_enabled_sell": true,
     "opt_ema_cross_buy_level": "30.0",
     "opt_ema_cross_sell_level": "70.0"
 }

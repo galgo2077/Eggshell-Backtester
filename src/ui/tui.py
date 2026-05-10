@@ -246,6 +246,9 @@ class BacktestApp(App):
     #tab-stats  { padding: 0 1; }
     .chart-btn { width: 100%; margin: 1 0; display: none; }
     .chart-btn.visible { display: block; }
+    #save-btn { width: 100%; margin: 2 0 1 0; background: #ff8800; color: #000000; text-style: bold; height: 3; display: none; }
+    #save-btn.visible { display: block; }
+    #save-btn:hover { background: #ffaa00; }
     
     #top-shortcuts {
         background: #1a1a1a;
@@ -551,6 +554,7 @@ class BacktestApp(App):
                         yield table
                     with TabPane("CHART", id="tab-chart"):
                         with Vertical():
+                            yield Button("SAVE BACKTEST", id="save-btn")
                             yield Button("FULL PORTFOLIO CHART", id="open-chart-main", variant="success", classes="chart-btn")
                             yield Button("TRADES CHART", id="open-chart-trades", variant="primary", classes="chart-btn")
                             yield Button("TOP DRAWDOWNS CHART", id="open-chart-drawdowns", variant="error", classes="chart-btn")
@@ -836,6 +840,8 @@ class BacktestApp(App):
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel-btn":
             self.action_cancel()
+        elif event.button.id == "save-btn":
+            self._save_backtest()
         elif event.button.id and event.button.id.startswith("open-chart-"):
             chart_type = event.button.id.replace("open-chart-", "")
             if hasattr(self, "charts") and self.charts and chart_type in self.charts:
@@ -847,6 +853,90 @@ class BacktestApp(App):
             else:
                 self.notify(f"Chart '{chart_type}' not generated.", severity="warning")
         # ... (calendar buttons logic if needed)
+
+    def _save_backtest(self) -> None:
+        import shutil, csv
+        results = getattr(self, "_last_results", None)
+        trades  = getattr(self, "_last_trades", [])
+        if not results:
+            self.notify("NO BACKTEST TO SAVE.", severity="warning")
+            return
+
+        proj_root  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
+        save_dir   = os.path.join(proj_root, "reports", "results", timestamp)
+        charts_out = os.path.join(save_dir, "charts")
+        os.makedirs(charts_out, exist_ok=True)
+
+        # ── 1. Copy charts and build local paths ─────────────────────────────
+        saved_charts = {}
+        source_charts = results.get("charts", {})
+        for key, src_path in source_charts.items():
+            if src_path and os.path.exists(src_path):
+                dst = os.path.join(charts_out, os.path.basename(src_path))
+                shutil.copy2(src_path, dst)
+                saved_charts[key] = dst
+
+        # ── 2. Stats log (plain text) ─────────────────────────────────────────
+        stats_path = os.path.join(save_dir, "stats.txt")
+        with open(stats_path, "w") as f:
+            f.write(f"EGGSHELL BACKTESTER — RESULTS SNAPSHOT\n")
+            f.write(f"Saved: {datetime.now().strftime('%Y-%m-%d %H:%M:%S')}\n")
+            f.write("=" * 50 + "\n\n")
+            f.write(f"{'TOTAL ROI':<28}{results['total_return_pct']:+.2f}%\n")
+            f.write(f"{'WIN RATE':<28}{results['win_rate']:.1f}%\n")
+            f.write(f"{'TOTAL TRADES':<28}{results['total_trades']}\n")
+            f.write(f"{'NET PROFIT':<28}${results['net_profit']:,.2f}\n")
+            f.write(f"{'FINAL BALANCE':<28}${results['final_balance']:,.2f}\n")
+            f.write(f"{'MAX DRAWDOWN':<28}{results['max_drawdown_pct']:.2f}%\n")
+            f.write(f"{'SHARPE RATIO':<28}{results['sharpe_ratio']:.4f}\n")
+            f.write(f"{'SORTINO RATIO':<28}{results['sortino_ratio']:.4f}\n")
+            f.write(f"{'CALMAR RATIO':<28}{results['calmar_ratio']:.4f}\n")
+            f.write(f"{'PROFIT FACTOR':<28}{results['profit_factor']:.4f}\n")
+            f.write(f"{'BEST TRADE':<28}{results['best_trade']:+.2f}%\n")
+            f.write(f"{'WORST TRADE':<28}{results['worst_trade']:+.2f}%\n")
+            f.write(f"{'AVG HOLD TIME':<28}")
+            h = results.get("avg_hold_hours", 0)
+            f.write(f"{h:.1f}h\n" if h < 48 else f"{h/24:.1f}d\n")
+            f.write(f"{'BUY & HOLD':<28}{results.get('buy_hold_pct', 0):+.2f}%\n")
+            f.write("\n── FULL VECTORBT STATS ──\n")
+            for k, v in results.get("full_stats", {}).items():
+                f.write(f"{str(k)[:28]:<28}{v}\n")
+            f.write("\n── PER-SYMBOL BREAKDOWN ──\n")
+            for sym, s in sorted(results.get("symbol_stats", {}).items()):
+                wr_s = s["wins"] / s["trades"] * 100 if s["trades"] else 0
+                f.write(f"{sym:<14} trades={s['trades']:>4}  winrate={wr_s:5.1f}%  total={s['total_pct']:+.2f}%\n")
+
+        # ── 3. Trades CSV ─────────────────────────────────────────────────────
+        trades_path = os.path.join(save_dir, "trades.csv")
+        if trades:
+            fieldnames = ["symbol", "buy_time", "sell_time", "buy_price", "sell_price",
+                          "quantity", "investment", "profit_pct", "account_profit_pct", "profit_usd"]
+            with open(trades_path, "w", newline="") as f:
+                writer = csv.DictWriter(f, fieldnames=fieldnames, extrasaction="ignore")
+                writer.writeheader()
+                writer.writerows(trades)
+
+        # ── 4. HTML links file ────────────────────────────────────────────────
+        links_path = os.path.join(save_dir, "charts_links.html")
+        with open(links_path, "w") as f:
+            f.write("<!DOCTYPE html><html><head><meta charset='utf-8'>")
+            f.write("<title>Backtest Charts</title>")
+            f.write("<style>body{background:#0a0a0a;color:#eee;font-family:monospace;padding:2em;}")
+            f.write("h1{color:#00ffff;}a{color:#ff8800;display:block;margin:.5em 0;font-size:1.1em;}</style>")
+            f.write("</head><body>")
+            f.write(f"<h1>EGGSHELL BACKTESTER — {timestamp}</h1>")
+            labels = {"main": "Full Portfolio Chart", "trades": "Trades Chart",
+                      "drawdowns": "Top Drawdowns", "returns": "Cumulative Returns",
+                      "cash": "Cash Flow Balance", "value": "Portfolio Value",
+                      "underwater": "Underwater Chart"}
+            for key, dst in saved_charts.items():
+                label = labels.get(key, key.title())
+                f.write(f'<a href="file://{dst}">{label}</a>')
+            f.write("</body></html>")
+
+        self.notify(f"SAVED → reports/results/{timestamp}", severity="information")
+        self.log_status(f"BACKTEST SAVED: {save_dir}", "success")
 
     def action_cancel(self) -> None:
         self.cancelled = True
@@ -1058,6 +1148,10 @@ class BacktestApp(App):
                 f"{wr_s:.1f}%",
                 f"[{col}]{s['total_pct']:+.2f}%[/]",
             )
+
+        self._last_results = results
+        self._last_trades = trades
+        self.query_one("#save-btn", Button).add_class("visible")
 
         self.notify("PORTFOLIO SEQUENCE COMPLETE.", severity="information")
         self.query_one("#results-tabs", TabbedContent).active = "tab-stats"

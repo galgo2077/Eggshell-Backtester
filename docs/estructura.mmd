@@ -1,5 +1,6 @@
 %% Eggshell Backtester — Module Dependency Map
 %% Render at https://mermaid.live or open reports/estructura.html
+%% Last updated: 2026-05-10 — added Save Backtest feature (reports/results/)
 
 flowchart TD
 
@@ -7,6 +8,7 @@ flowchart TD
 
   subgraph UI["UI Layer"]
     TUI["ui/tui.py · BacktestApp"]
+    SAVEBTN["_save_backtest() · SAVE BACKTEST button"]
   end
 
   subgraph CORE["Core Engine"]
@@ -36,10 +38,24 @@ flowchart TD
     OLLAMA["ollama (localhost:11434)"]
   end
 
+  subgraph REPORTS["Reports Output (reports/)"]
+    RCHARTS["charts/ · live HTML charts (overwritten each run)"]
+    RRESULTS["results/YYYYMMDD_HHMMSS/ · saved snapshots"]
+    RSTATS["  └─ stats.txt · full metrics log"]
+    RTRADES["  └─ trades.csv · trade records"]
+    RCOPY["  └─ charts/ · copied HTML charts"]
+    RLINKS["  └─ charts_links.html · local file:// hyperlinks"]
+    RERR["errors/error.log · runtime errors"]
+  end
+
   MAIN --> TUI & DF & SL & BE
   TUI  --> DF & SL & BE & CONST & TEXTUAL
+  TUI  --> SAVEBTN
+  SAVEBTN --> RRESULTS
+  RRESULTS --> RSTATS & RTRADES & RCOPY & RLINKS
   SL   --> EMAS & EBS
   BE   --> CONST & VBT & PLOTLY
+  BE   --> RCHARTS & RERR
   DF   --> CONST & CONN
   CONN --> BAPI
   CONST --> EBC & EMAC

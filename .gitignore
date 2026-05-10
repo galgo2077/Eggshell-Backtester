@@ -24,6 +24,7 @@ Thumbs.db
 reports/charts/*.html
 reports/errors/error.log
 reports/sessions/
+reports/results/*
 
 # Legacy remnant Cleanup
 Eggshell-Backtester/
