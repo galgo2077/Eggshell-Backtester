@@ -7,7 +7,7 @@ __pycache__/
 *$py.class
 
 # Caches and Local Services
-src/binance_service/cache/*.pkl
+Eggshell-Backtester/src/binance_service/cache/*.pkl
 .cache/
 
 # Environment
@@ -21,6 +21,6 @@ ENV/
 Thumbs.db
 
 # Runtime outputs and reports
-reports/charts/*.html
-reports/errors/error.log
-reports/sessions/
+Eggshell-Backtester/reports/charts/*.html
+Eggshell-Backtester/reports/errors/error.log
+Eggshell-Backtester/reports/sessions/
