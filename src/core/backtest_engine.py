@@ -14,18 +14,19 @@ def _safe(val, default=0.0):
 class BacktestEngine:
     def __init__(self, signals_df: pd.DataFrame, initial_balance: float | None = None,
                  position_size_pct: float = 100.0, cooldown: int = 0,
-                 accumulate: bool = False):
+                 accumulate: bool = False, per_symbol_alloc: dict | None = None):
         self.df = signals_df.copy()
         self.initial_balance = initial_balance or BacktestConstants.INITIAL_BALANCE
         self.position_size_pct = position_size_pct
         self.cooldown = cooldown
         self.accumulate = accumulate
+        self.per_symbol_alloc = per_symbol_alloc
         self.results: dict = {}
         self.trades: list[dict] = []
 
     def run(self, on_progress: callable = None):
         if on_progress:
-            on_progress(0.1)
+            on_progress(0.1, "PIVOTING SIGNAL MATRICES...")
 
         if not isinstance(self.df.index, pd.DatetimeIndex):
             self.df.index = pd.to_datetime(self.df.index)
@@ -57,20 +58,31 @@ class BacktestEngine:
                             last_entry = i
 
         if on_progress:
-            on_progress(0.4)
+            on_progress(0.4, "APPLYING TRADE SIZING & COOLDOWN...")
 
         size_df = pd.DataFrame(np.nan, index=close_df.index, columns=close_df.columns)
+        n_cols = len(buy_df.columns)
 
         if self.accumulate:
-            # Fixed dollar per entry: $1000 × 1% = $10/trade → max 100 trades before cash runs out
-            pos_size = round((self.position_size_pct / 100.0) * self.initial_balance, 2)
-            size_df[buy_df]  = pos_size
-            size_df[sell_df] = np.inf   # liquidate entire accumulated position at once
+            for col in buy_df.columns:
+                sym = str(col)
+                alloc_frac = (
+                    self.per_symbol_alloc.get(sym, 100.0 / n_cols) / 100.0
+                    if self.per_symbol_alloc else 1.0
+                )
+                sym_pos = round((self.position_size_pct / 100.0) * alloc_frac * self.initial_balance, 2)
+                size_df.loc[buy_df[col], col] = sym_pos
+            size_df[sell_df] = np.inf
             size_type = 'value'
         else:
-            # Dynamic: each entry uses X% of current available cash
-            size_df[buy_df]  = self.position_size_pct / 100.0
-            size_df[sell_df] = 1.0      # close 100% of position
+            for col in buy_df.columns:
+                sym = str(col)
+                alloc_frac = (
+                    self.per_symbol_alloc.get(sym, 100.0 / n_cols) / 100.0
+                    if self.per_symbol_alloc else 1.0
+                )
+                size_df.loc[buy_df[col], col] = (self.position_size_pct / 100.0) * alloc_frac
+            size_df[sell_df] = 1.0
             size_type = 'percent'
 
         portfolio = vbt.Portfolio.from_signals(
@@ -87,7 +99,7 @@ class BacktestEngine:
         )
 
         if on_progress:
-            on_progress(0.8)
+            on_progress(0.8, "COMPUTING PERFORMANCE STATISTICS...")
 
         # ── Stats ─────────────────────────────────────────────────────────────
         try:
@@ -190,7 +202,7 @@ class BacktestEngine:
         charts = self._generate_charts(close_df, formatted_trades, portfolio)
 
         if on_progress:
-            on_progress(1.0)
+            on_progress(1.0, "GENERATING CHART REPORTS...")
 
         self.results = {
             "total_return_pct":  total_ret,
@@ -240,6 +252,7 @@ class BacktestEngine:
         try:
             os.makedirs(charts_dir, exist_ok=True)
             self._write_trades_chart(close_df, formatted_trades, charts["trades"])
+
             for key, method in [
                 ("main",       portfolio.plot),
                 ("underwater", portfolio.plot_underwater),
@@ -258,52 +271,115 @@ class BacktestEngine:
 
     def _write_trades_chart(self, close_df, formatted_trades, path: str):
         import plotly.graph_objects as go
+        import json as _json
+
         colors = ['#818cf8', '#34d399', '#fb7185', '#fbbf24', '#22d3ee', '#a78bfa']
+        symbols = list(close_df.columns)
+        N = 3  # traces per symbol: price, buys, sells
+
         fig = go.Figure()
 
-        for idx, symbol in enumerate(close_df.columns):
-            color = colors[idx % len(colors)]
+        for idx, symbol in enumerate(symbols):
+            color  = colors[idx % len(colors)]
+            is_first = idx == 0
+            sym_trades = [t for t in formatted_trades if t['symbol'] == symbol]
+
             fig.add_trace(go.Scatter(
                 x=close_df.index, y=close_df[symbol],
                 mode='lines', name=f'{symbol} Price',
-                line=dict(color=color, width=2), opacity=0.85,
+                line=dict(color=color, width=2), opacity=0.9,
+                visible=is_first,
             ))
-            sym_trades = [t for t in formatted_trades if t['symbol'] == symbol]
-            if sym_trades:
-                fig.add_trace(go.Scatter(
-                    x=[t['buy_time'] for t in sym_trades],
-                    y=[t['buy_price'] for t in sym_trades],
-                    mode='markers', name=f'{symbol} Buy',
-                    marker=dict(symbol='triangle-up', size=12, color='#22c55e',
-                                line=dict(color='#15803d', width=1.5)),
-                    hovertemplate='<b>BUY %{text}</b><br>%{x}<br>$%{y:,.2f}<extra></extra>',
-                    text=[symbol] * len(sym_trades),
-                ))
-                fig.add_trace(go.Scatter(
-                    x=[t['sell_time'] for t in sym_trades],
-                    y=[t['sell_price'] for t in sym_trades],
-                    mode='markers', name=f'{symbol} Sell',
-                    marker=dict(symbol='triangle-down', size=12, color='#ef4444',
-                                line=dict(color='#b91c1c', width=1.5)),
-                    hovertemplate='<b>SELL %{text}</b><br>%{x}<br>$%{y:,.2f}<extra></extra>',
-                    text=[symbol] * len(sym_trades),
-                ))
+            fig.add_trace(go.Scatter(
+                x=[t['buy_time']   for t in sym_trades],
+                y=[t['buy_price']  for t in sym_trades],
+                mode='markers', name=f'BUY',
+                marker=dict(symbol='triangle-up', size=16, color='#22c55e',
+                            line=dict(color='#15803d', width=2)),
+                hovertemplate='<b>BUY</b><br>%{x}<br>$%{y:,.4f}<extra></extra>',
+                visible=is_first,
+            ))
+            fig.add_trace(go.Scatter(
+                x=[t['sell_time']  for t in sym_trades],
+                y=[t['sell_price'] for t in sym_trades],
+                mode='markers', name=f'SELL',
+                marker=dict(symbol='triangle-down', size=16, color='#ef4444',
+                            line=dict(color='#b91c1c', width=2)),
+                hovertemplate='<b>SELL</b><br>%{x}<br>$%{y:,.4f}<extra></extra>',
+                visible=is_first,
+            ))
+
+        # Build per-asset dropdown buttons
+        buttons = []
+        for idx, symbol in enumerate(symbols):
+            vis = [False] * (len(symbols) * N)
+            for j in range(N):
+                vis[idx * N + j] = True
+            buttons.append(dict(
+                label=symbol,
+                method='update',
+                args=[{'visible': vis},
+                      {'title': {'text': f'Trade Execution — {symbol}',
+                                 'font': {'color': '#f8fafc', 'size': 22, 'family': 'Arial'}}}]
+            ))
 
         fig.update_layout(
-            title=dict(text='Market Execution Map — Buy & Sell Markers',
+            title=dict(text=f'Trade Execution — {symbols[0] if symbols else ""}',
                        font=dict(color='#f8fafc', size=22, family='Arial')),
             paper_bgcolor='#0b0f19', plot_bgcolor='#111827',
             hovermode='x unified',
-            legend=dict(font=dict(color='#94a3b8', size=11),
-                        bgcolor='rgba(11,15,25,0.8)', bordercolor='#334155', borderwidth=1),
+            updatemenus=[dict(
+                buttons=buttons,
+                direction='down',
+                showactive=True,
+                x=0.0, xanchor='left',
+                y=1.18, yanchor='top',
+                bgcolor='#1e293b', bordercolor='#00ffff',
+                font=dict(color='#f8fafc', size=13),
+            )],
+            legend=dict(font=dict(color='#94a3b8', size=12),
+                        bgcolor='rgba(11,15,25,0.85)', bordercolor='#334155', borderwidth=1),
             xaxis=dict(title=dict(text='Date', font=dict(color='#94a3b8', size=12)),
                        tickfont=dict(color='#94a3b8'), gridcolor='#1f2937',
                        rangeslider=dict(visible=True)),
             yaxis=dict(title=dict(text='Price ($)', font=dict(color='#94a3b8', size=12)),
                        tickfont=dict(color='#94a3b8'), gridcolor='#1f2937'),
-            margin=dict(l=50, r=50, t=80, b=50),
+            margin=dict(l=50, r=50, t=110, b=50),
         )
-        fig.write_html(path)
+
+        html_str = fig.to_html(full_html=True, include_plotlyjs='cdn')
+
+        # Inject JS: read URL hash and restyle to the matching asset
+        symbols_js = _json.dumps(symbols)
+        js = f"""
+<script>
+(function() {{
+  function applyHash() {{
+    var symbols = {symbols_js};
+    var hash = decodeURIComponent(window.location.hash.replace('#', ''));
+    var idx = symbols.indexOf(hash);
+    if (idx < 0) return;
+    var N = {N};
+    var total = symbols.length * N;
+    var vis = [];
+    for (var i = 0; i < total; i++) {{
+      var si = Math.floor(i / N);
+      vis.push(si === idx);
+    }}
+    var gd = document.querySelector('.js-plotly-plot');
+    if (gd) {{
+      Plotly.restyle(gd, {{visible: vis}});
+      Plotly.relayout(gd, {{title: {{text: 'Trade Execution — ' + hash}}}});
+    }}
+  }}
+  if (document.readyState === 'complete') {{ applyHash(); }}
+  else {{ window.addEventListener('load', applyHash); }}
+}})();
+</script>
+"""
+        html_str = html_str.replace('</body>', js + '</body>')
+        with open(path, 'w') as f:
+            f.write(html_str)
 
     def _log_error(self, msg: str):
         proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

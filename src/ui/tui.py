@@ -8,6 +8,7 @@ import calendar
 import webbrowser
 from datetime import datetime, date
 from textual.app import App, ComposeResult
+from textual.screen import ModalScreen
 from textual.widget import Widget
 from textual.containers import Horizontal, Vertical, Grid, VerticalScroll
 from textual.widgets import (Header, Footer, Button, Static, Label, Input,
@@ -86,6 +87,152 @@ class CalendarWidget(Static):
             event.stop()
 
 import json
+import re as _re
+import time
+
+
+class SaveNameModal(ModalScreen):
+    CSS = """
+    SaveNameModal { align: center middle; }
+    SaveNameModal > Vertical {
+        width: 64; height: auto;
+        background: #111827; border: heavy #00ffff; padding: 2 3;
+    }
+    SaveNameModal .modal-title {
+        color: #00ffff; text-style: bold; text-align: center; width: 100%; margin-bottom: 1;
+    }
+    SaveNameModal Label { color: #888888; }
+    SaveNameModal Input { background: #1e293b; color: #00ff00; height: 3; margin: 1 0 2 0; }
+    SaveNameModal .modal-btns { height: 3; }
+    SaveNameModal .modal-btns Button { width: 1fr; height: 3; margin: 0; }
+    SaveNameModal #modal-save-ok { background: #ff8800; color: #000; text-style: bold; margin-right: 1; }
+    SaveNameModal #modal-save-ok:hover { background: #ffaa00; }
+    SaveNameModal #modal-save-cancel { background: #550000; }
+    SaveNameModal #modal-save-cancel:hover { background: #ff0000; }
+    """
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("SAVE BACKTEST", classes="modal-title")
+            yield Label("NAME THIS SESSION:")
+            yield Input(placeholder="e.g. btc_ema_bull_run", id="save-name-input")
+            with Horizontal(classes="modal-btns"):
+                yield Button("SAVE", id="modal-save-ok")
+                yield Button("CANCEL", id="modal-save-cancel")
+
+    def on_mount(self) -> None:
+        self.query_one("#save-name-input", Input).focus()
+
+    def on_key(self, event) -> None:
+        if event.key == "enter":
+            self._confirm()
+        elif event.key == "escape":
+            self.dismiss(None)
+
+    def _confirm(self) -> None:
+        raw = self.query_one("#save-name-input", Input).value.strip()
+        name = _re.sub(r"[^\w\-]", "_", raw) if raw else ""
+        self.dismiss(name)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "modal-save-ok":
+            self._confirm()
+        elif event.button.id == "modal-save-cancel":
+            self.dismiss(None)
+
+
+class LoadBacktestModal(ModalScreen):
+    CSS = """
+    LoadBacktestModal { align: center middle; }
+    LoadBacktestModal > Vertical {
+        width: 84; height: 28;
+        background: #111827; border: heavy #00ffff; padding: 2 3;
+    }
+    LoadBacktestModal .modal-title {
+        color: #00ffff; text-style: bold; text-align: center; width: 100%; margin-bottom: 1;
+    }
+    LoadBacktestModal Input { background: #1e293b; color: #00ff00; height: 3; margin-bottom: 1; }
+    LoadBacktestModal DataTable { height: 1fr; background: #0a0a0a; }
+    LoadBacktestModal .modal-btns { height: 3; margin-top: 1; }
+    LoadBacktestModal .modal-btns Button { width: 1fr; height: 3; margin: 0; }
+    LoadBacktestModal #modal-load-ok { background: #005500; color: #fff; text-style: bold; margin-right: 1; }
+    LoadBacktestModal #modal-load-ok:hover { background: #00ff00; color: #000; }
+    LoadBacktestModal #modal-load-cancel { background: #550000; }
+    LoadBacktestModal #modal-load-cancel:hover { background: #ff0000; }
+    """
+
+    def __init__(self, results_dir: str, **kwargs):
+        super().__init__(**kwargs)
+        self.results_dir = results_dir
+        self._selected: str | None = None
+        self._all_folders: list[str] = []
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("LOAD BACKTEST", classes="modal-title")
+            yield Input(placeholder="Search by name...", id="load-search-input")
+            yield DataTable(id="load-table", cursor_type="row")
+            with Horizontal(classes="modal-btns"):
+                yield Button("LOAD", id="modal-load-ok")
+                yield Button("CANCEL", id="modal-load-cancel")
+
+    def on_mount(self) -> None:
+        table = self.query_one("#load-table", DataTable)
+        table.add_columns("NAME", "SAVED ON")
+        self._all_folders = self._get_folders()
+        self._populate(self._all_folders)
+        self.query_one("#load-search-input", Input).focus()
+
+    def _get_folders(self) -> list[str]:
+        if not os.path.exists(self.results_dir):
+            return []
+        entries = []
+        for f in os.listdir(self.results_dir):
+            full = os.path.join(self.results_dir, f)
+            if os.path.isdir(full):
+                entries.append((os.path.getmtime(full), f))
+        return [f for _, f in sorted(entries, reverse=True)]
+
+    def _populate(self, folders: list[str]) -> None:
+        table = self.query_one("#load-table", DataTable)
+        table.clear()
+        for f in folders:
+            parts = f.split("_", 2)
+            if len(parts[0]) == 8 and parts[0].isdigit():
+                d, t = parts[0], parts[1] if len(parts) > 1 else ""
+                date_fmt = f"{d[:4]}-{d[4:6]}-{d[6:8]}"
+                time_fmt = f"{t[:2]}:{t[2:4]}:{t[4:6]}" if len(t) == 6 else t
+                saved_on = f"{date_fmt} {time_fmt}"
+                name = parts[2].replace("_", " ") if len(parts) > 2 else "(unnamed)"
+            else:
+                name = f.replace("_", " ")
+                saved_on = ""
+            table.add_row(name, saved_on, key=f)
+
+    @on(Input.Changed, "#load-search-input")
+    def on_search(self, event: Input.Changed) -> None:
+        q = event.value.lower()
+        self._populate([f for f in self._all_folders if q in f.lower()])
+
+    def on_data_table_row_highlighted(self, event: DataTable.RowHighlighted) -> None:
+        if event.row_key:
+            self._selected = str(event.row_key.value)
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
+
+    def _load(self) -> None:
+        if self._selected:
+            self.dismiss(self._selected)
+        else:
+            self.app.notify("SELECT A BACKTEST FIRST.", severity="warning")
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "modal-load-ok":
+            self._load()
+        elif event.button.id == "modal-load-cancel":
+            self.dismiss(None)
 
 
 class BacktestApp(App):
@@ -246,9 +393,13 @@ class BacktestApp(App):
     #tab-stats  { padding: 0 1; }
     .chart-btn { width: 100%; margin: 1 0; display: none; }
     .chart-btn.visible { display: block; }
-    #save-btn { width: 100%; margin: 2 0 1 0; background: #ff8800; color: #000000; text-style: bold; height: 3; display: none; }
+    #save-btn { width: 100%; margin: 2 0 0 0; background: #ff8800; color: #000000; text-style: bold; height: 3; display: none; }
     #save-btn.visible { display: block; }
     #save-btn:hover { background: #ffaa00; }
+    #load-btn { width: 100%; margin: 1 0 1 0; background: #1e3a5f; color: #00ccff; text-style: bold; height: 3; }
+    #load-btn:hover { background: #00ccff; color: #000000; }
+    #asset-chart-select { width: 100%; margin: 1 0; display: none; }
+    #asset-chart-select.visible { display: block; }
     
     #top-shortcuts {
         background: #1a1a1a;
@@ -285,6 +436,15 @@ class BacktestApp(App):
     #min-date-hint { color: #555555; text-align: right; width: 1fr; }
     .date-header-row { height: 2; align: left middle; }
     .date-header-row Label { margin-top: 0; }
+
+    #tab-pie { padding: 0 1; }
+    #assets-pie { width: 100%; height: auto; }
+    #alloc-section { display: none; margin-top: 1; }
+    #alloc-section.visible { display: block; }
+    .alloc-label { width: 10; color: #888888; }
+    .alloc-input { width: 8; }
+    #alloc-total { text-align: right; margin-top: 1; text-style: bold; color: #00ff00; }
+    #alloc-total.invalid { color: #ff0000; }
     """
 
     BINDINGS = [
@@ -298,6 +458,7 @@ class BacktestApp(App):
         super().__init__(**kwargs)
         self.sort_states = {} # Tracks column_key -> ascending (bool)
         self._active_settings = {}
+        self._loading_settings = False
 
     def rebuild_strategy_and_risk_tabs(self, strategy_name: str) -> None:
         schema = STRATEGY_SCHEMAS.get(strategy_name, STRATEGY_SCHEMAS["EMA_CROSS"])
@@ -421,9 +582,13 @@ class BacktestApp(App):
             self.rebuild_strategy_and_risk_tabs(strat_to_load)
             
             # 3. Automatically restore checkboxes
+            self._loading_settings = True
             saved_assets = set(loaded.get("assets", ["BTCUSDT"]))
             for cb in self.query("#asset-checkbox-container Checkbox"):
                 cb.value = str(cb.label) in saved_assets
+            self._loading_settings = False
+            # 4. Rebuild allocation with saved values (must happen after checkboxes restored)
+            self._rebuild_allocation_inputs(reset=False)
         except Exception:
             pass
 
@@ -480,10 +645,6 @@ class BacktestApp(App):
                                         yield Label("BALANCE ($) ")
                                         yield Label("●", id="balance-status", classes="date-status-ok")
                                     yield Input("1000", id="balance-input")
-                                    with Horizontal(classes="date-header-row"):
-                                        yield Label("RISK (%) PER TRADE ")
-                                        yield Label("●", id="size-status", classes="date-status-ok")
-                                    yield Input("20", id="size-input")
 
                                 with Collapsible(title="TIME WINDOW"):
                                     with Horizontal(classes="date-header-row"):
@@ -505,6 +666,14 @@ class BacktestApp(App):
 
                         with TabPane("RISK"):
                             with VerticalScroll():
+                                with Horizontal(classes="date-header-row"):
+                                    yield Label("BUDGET PER TRADE (%) ")
+                                    yield Label("●", id="size-status", classes="date-status-ok")
+                                yield Input("20", id="size-input")
+                                with Vertical(id="alloc-section"):
+                                    yield Static("── ASSET ALLOCATION ──", classes="section-header")
+                                    yield Vertical(id="allocation-container")
+                                    yield Label("TOTAL: 0.0%", id="alloc-total")
                                 with Horizontal(classes="inline-field"):
                                     yield Label("COOLDOWN (CANDLES)")
                                     yield Input("0", id="cooldown-input")
@@ -555,13 +724,15 @@ class BacktestApp(App):
                     with TabPane("CHART", id="tab-chart"):
                         with Vertical():
                             yield Button("SAVE BACKTEST", id="save-btn")
+                            yield Button("LOAD BACKTEST", id="load-btn")
+                            yield Select([], id="asset-chart-select", prompt="SELECT ASSET")
                             yield Button("FULL PORTFOLIO CHART", id="open-chart-main", variant="success", classes="chart-btn")
-                            yield Button("TRADES CHART", id="open-chart-trades", variant="primary", classes="chart-btn")
                             yield Button("TOP DRAWDOWNS CHART", id="open-chart-drawdowns", variant="error", classes="chart-btn")
                             yield Button("CUMULATIVE RETURNS", id="open-chart-returns", variant="success", classes="chart-btn")
                             yield Button("CASH FLOW BALANCE", id="open-chart-cash", variant="primary", classes="chart-btn")
                             yield Button("PORTFOLIO VALUE", id="open-chart-value", variant="default", classes="chart-btn")
                             yield Button("UNDERWATER CHART (DEEP DIVE)", id="open-chart-underwater", variant="warning", classes="chart-btn")
+                            yield Button("ASSET TRADES CHART", id="open-chart-asset-trades", variant="primary", classes="chart-btn")
                     with TabPane("STATS", id="tab-stats"):
                         with Horizontal(classes="chart-info-row"):
                             with VerticalScroll(id="ext-metrics"):
@@ -572,6 +743,9 @@ class BacktestApp(App):
                                 sym_table = DataTable(id="symbol-table", cursor_type="row")
                                 sym_table.add_columns("SYMBOL", "TRADES", "WIN RATE", "TOTAL %")
                                 yield sym_table
+                    with TabPane("PIE", id="tab-pie"):
+                        with VerticalScroll():
+                            yield Static("", id="assets-pie")
                     with TabPane("LOGS", id="tab-logs"):
                         yield RichLog(id="main-log", highlight=True, markup=True)
 
@@ -711,6 +885,9 @@ class BacktestApp(App):
     @on(Input.Changed)
     def validate_opt_input(self, event: Input.Changed) -> None:
         w_id = event.input.id or ""
+        if w_id.startswith("alloc-"):
+            self._update_alloc_total()
+            return
         if not w_id.startswith("opt_"):
             return
         val = event.value.strip()
@@ -807,11 +984,23 @@ class BacktestApp(App):
                     else:
                         adv_params[field] = info["default"]
                         
-            enabled_sell = adv_params.get("ENABLED_SELL", True)
+            # Per-symbol allocation
+            per_symbol_alloc = None
+            if len(assets) >= 2:
+                per_symbol_alloc = {}
+                for asset in assets:
+                    try:
+                        per_symbol_alloc[asset] = float(self.query_one(f"#alloc-{asset}", Input).value)
+                    except Exception:
+                        per_symbol_alloc[asset] = round(100.0 / len(assets), 2)
+                total_alloc = sum(per_symbol_alloc.values())
+                if abs(total_alloc - 100.0) > 0.5:
+                    return None, f"ALLOCATION MUST SUM TO 100% (CURRENTLY {total_alloc:.1f}%)"
+
             return {
                 "assets": assets, "interval": interval, "balance": balance, "size": size,
                 "start_date": start_date, "end_date": end_date, "adv_params": adv_params,
-                "cooldown": cooldown, "accumulate": not enabled_sell,
+                "cooldown": cooldown, "accumulate": True, "per_symbol_alloc": per_symbol_alloc,
             }, None
         except ValueError as exc:
             return None, f"INVALID INPUT: {exc}"
@@ -837,11 +1026,217 @@ class BacktestApp(App):
         self.notify("INITIATING PORTFOLIO SEQUENCE...")
         Thread(target=self._run_backtest, kwargs=params, daemon=True).start()
 
+    def _draw_pie_chart(self) -> str:
+        import math
+        results = getattr(self, "_last_results", None)
+        if not results:
+            return "\n[dim #555555]  Run a backtest to see the asset pie.[/dim #555555]"
+        sym_stats = results.get("symbol_stats", {})
+        symbols   = sorted(sym_stats.keys())
+        if not symbols:
+            return "\n[dim #555555]  No trades recorded.[/dim #555555]"
+
+        COLORS = ['#818cf8','#34d399','#fb7185','#fbbf24','#22d3ee','#a78bfa','#f97316','#84cc16']
+
+        alloc: dict[str, float] = {}
+        for sym in symbols:
+            try:
+                alloc[sym] = float(self.query_one(f"#alloc-{sym}", Input).value)
+            except Exception:
+                alloc[sym] = 100.0 / len(symbols)
+        total_a = sum(alloc.values()) or 1.0
+
+        bounds = [0.0]
+        for sym in symbols:
+            bounds.append(bounds[-1] + (alloc[sym] / total_a) * 2 * math.pi)
+
+        # ── Braille dot pie ───────────────────────────────────────────────────
+        # Each braille char = 2 dot-cols × 4 dot-rows.
+        # Chars are ~2× taller than wide → dot aspect is square.
+        # W chars × H chars  →  DW=W*2 dot-cols × DH=H*4 dot-rows.
+        # W=36, H=18 → visual box ≈ 36 char-widths × 36 char-widths = square.
+        W, H     = 36, 18
+        DW, DH   = W * 2, H * 4
+        cx, cy   = (DW - 1) / 2.0, (DH - 1) / 2.0
+        r        = min(DW, DH) / 2.0 - 1.5   # dot-space radius (dots are square)
+
+        # Braille bit layout:  col 0 rows 0-2 → bits 0-2; col 0 row 3 → bit 6
+        #                      col 1 rows 0-2 → bits 3-5; col 1 row 3 → bit 7
+        DOT_BITS = [
+            (0, 0, 0), (0, 1, 1), (0, 2, 2), (0, 3, 6),
+            (1, 0, 3), (1, 1, 4), (1, 2, 5), (1, 3, 7),
+        ]
+
+        def sector_at(dc: int, dr: int) -> int:
+            ddx = (dc - cx) / r
+            ddy = (dr - cy) / r
+            if ddx * ddx + ddy * ddy > 1.0:
+                return -1
+            angle = math.atan2(ddy, ddx) + math.pi
+            for i in range(len(symbols)):
+                if angle < bounds[i + 1]:
+                    return i
+            return len(symbols) - 1
+
+        rows: list[str] = []
+        for row in range(H):
+            parts: list[str] = []
+            for col in range(W):
+                bits: int = 0
+                votes: dict[int, int] = {}
+                for dc, dr, bit in DOT_BITS:
+                    sec = sector_at(col * 2 + dc, row * 4 + dr)
+                    if sec >= 0:
+                        bits |= (1 << bit)
+                        votes[sec] = votes.get(sec, 0) + 1
+                if bits == 0:
+                    parts.append(' ')
+                else:
+                    dom     = max(votes, key=votes.get)
+                    col_str = COLORS[dom % len(COLORS)]
+                    parts.append(f"[{col_str}]{chr(0x2800 + bits)}[/{col_str}]")
+            rows.append("".join(parts))
+
+        # ── Stats table ───────────────────────────────────────────────────────
+        sep = "[#1f2937]" + "─" * 52 + "[/#1f2937]"
+        tbl = [
+            "",
+            f"[bold #00ffff]  {'SYM':<7} {'ALLOC':>6}  {'P&L%':>8}  {'WIN%':>6}  {'TRADES':>6}[/bold #00ffff]",
+            sep,
+        ]
+        for i, sym in enumerate(symbols):
+            s       = sym_stats[sym]
+            col_str = COLORS[i % len(COLORS)]
+            a       = alloc.get(sym, 100.0 / len(symbols))
+            pnl     = s.get("total_pct", 0.0)
+            t       = s.get("trades", 0)
+            wr      = s.get("wins", 0) / t * 100 if t else 0.0
+            pc      = "green" if pnl >= 0 else "red"
+            short   = sym.replace("USDT", "")
+            tbl.append(
+                f"  [{col_str}]⣿[/{col_str}] [white]{short:<7}[/white]"
+                f" [yellow]{a:5.1f}%[/yellow]"
+                f"  [{pc}]{pnl:+7.2f}%[/{pc}]"
+                f"  [cyan]{wr:5.1f}%[/cyan]"
+                f"  [white]{t:5d}[/white]"
+            )
+        tbl.append(sep)
+
+        header = "\n[bold #00ffff]  ── ASSET ALLOCATION PIE ──[/bold #00ffff]\n"
+        return header + "\n".join(rows) + "\n" + "\n".join(tbl)
+
+    def _apply_asset_filter(self, value) -> None:
+        is_all = (value is Select.BLANK or value == "__ALL__")
+        charts = getattr(self, "charts", {})
+        portfolio_btns = [
+            "open-chart-main", "open-chart-drawdowns", "open-chart-returns",
+            "open-chart-cash", "open-chart-value", "open-chart-underwater",
+        ]
+
+        # Portfolio charts: visible only when ALL is selected
+        for btn_id in portfolio_btns:
+            try:
+                btn = self.query_one(f"#{btn_id}", Button)
+                key = btn_id.replace("open-chart-", "")
+                if is_all and charts and key in charts and os.path.exists(charts.get(key, "")):
+                    btn.add_class("visible")
+                else:
+                    btn.remove_class("visible")
+            except Exception:
+                pass
+
+        # Asset trades chart: always visible once charts exist, but disabled when ALL
+        try:
+            btn = self.query_one("#open-chart-asset-trades", Button)
+            if charts and "trades" in charts and os.path.exists(charts.get("trades", "")):
+                btn.add_class("visible")
+                btn.disabled = is_all
+            else:
+                btn.remove_class("visible")
+        except Exception:
+            pass
+
+    @on(Select.Changed, "#asset-chart-select")
+    def on_asset_filter_changed(self, event: Select.Changed) -> None:
+        self._apply_asset_filter(event.value)
+
+    def _rebuild_allocation_inputs(self, reset: bool = True) -> None:
+        try:
+            assets = [str(cb.label) for cb in self.query("#asset-checkbox-container Checkbox") if cb.value]
+            container = self.query_one("#allocation-container")
+            alloc_section = self.query_one("#alloc-section")
+            container.remove_children()
+            if len(assets) < 2:
+                alloc_section.remove_class("visible")
+                return
+            alloc_section.add_class("visible")
+            n = len(assets)
+            base_pct = round(100.0 / n, 2)
+            pcts = [base_pct] * (n - 1) + [round(100.0 - base_pct * (n - 1), 2)]
+            for asset, default_pct in zip(assets, pcts):
+                if reset:
+                    val = str(default_pct)
+                else:
+                    val = str(self._active_settings.get(f"alloc-{asset}", default_pct))
+                container.mount(Horizontal(
+                    Label(asset.replace("USDT", ""), classes="alloc-label"),
+                    Input(val, id=f"alloc-{asset}", classes="alloc-input"),
+                    Label("%"),
+                    classes="inline-field",
+                ))
+            self._update_alloc_total()
+        except Exception:
+            pass
+
+    def _update_alloc_total(self) -> None:
+        try:
+            assets = [str(cb.label) for cb in self.query("#asset-checkbox-container Checkbox") if cb.value]
+            total = 0.0
+            for asset in assets:
+                try:
+                    total += float(self.query_one(f"#alloc-{asset}", Input).value)
+                except Exception:
+                    pass
+            lbl = self.query_one("#alloc-total", Label)
+            lbl.update(f"TOTAL: {total:.1f}%")
+            if abs(total - 100.0) < 0.1:
+                lbl.remove_class("invalid")
+            else:
+                lbl.add_class("invalid")
+        except Exception:
+            pass
+
+    @on(Checkbox.Changed, ".asset-checkbox")
+    def on_asset_toggled(self, event: Checkbox.Changed) -> None:
+        if not self._loading_settings:
+            self._rebuild_allocation_inputs(reset=True)
+
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel-btn":
             self.action_cancel()
         elif event.button.id == "save-btn":
-            self._save_backtest()
+            def _after_name(name: str | None) -> None:
+                if name is not None:
+                    self._save_backtest(name)
+            self.push_screen(SaveNameModal(), _after_name)
+        elif event.button.id == "load-btn":
+            proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+            results_dir = os.path.join(proj_root, "reports", "results")
+            def _after_load(folder: str | None) -> None:
+                if folder:
+                    self._load_backtest(folder)
+            self.push_screen(LoadBacktestModal(results_dir), _after_load)
+        elif event.button.id == "open-chart-asset-trades":
+            symbol = self.query_one("#asset-chart-select", Select).value
+            charts = getattr(self, "charts", {})
+            trades_path = charts.get("trades", "")
+            if trades_path and os.path.exists(trades_path):
+                if symbol and symbol not in (Select.BLANK, "__ALL__"):
+                    webbrowser.open(f"file://{trades_path}#{symbol}")
+                else:
+                    webbrowser.open(f"file://{trades_path}")
+            else:
+                self.notify("TRADES CHART NOT GENERATED.", severity="warning")
         elif event.button.id and event.button.id.startswith("open-chart-"):
             chart_type = event.button.id.replace("open-chart-", "")
             if hasattr(self, "charts") and self.charts and chart_type in self.charts:
@@ -854,7 +1249,7 @@ class BacktestApp(App):
                 self.notify(f"Chart '{chart_type}' not generated.", severity="warning")
         # ... (calendar buttons logic if needed)
 
-    def _save_backtest(self) -> None:
+    def _save_backtest(self, name: str = "") -> None:
         import shutil, csv
         results = getattr(self, "_last_results", None)
         trades  = getattr(self, "_last_trades", [])
@@ -862,9 +1257,16 @@ class BacktestApp(App):
             self.notify("NO BACKTEST TO SAVE.", severity="warning")
             return
 
-        proj_root  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-        timestamp  = datetime.now().strftime("%Y%m%d_%H%M%S")
-        save_dir   = os.path.join(proj_root, "reports", "results", timestamp)
+        proj_root   = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        timestamp   = datetime.now().strftime("%Y%m%d_%H%M%S")
+        base_name   = name if name else timestamp
+        results_dir = os.path.join(proj_root, "reports", "results")
+        candidate   = os.path.join(results_dir, base_name)
+        # Avoid overwriting: append timestamp if folder already exists
+        if os.path.exists(candidate):
+            base_name = f"{base_name}_{timestamp}"
+            candidate = os.path.join(results_dir, base_name)
+        save_dir = candidate
         charts_out = os.path.join(save_dir, "charts")
         os.makedirs(charts_out, exist_ok=True)
 
@@ -935,8 +1337,106 @@ class BacktestApp(App):
                 f.write(f'<a href="file://{dst}">{label}</a>')
             f.write("</body></html>")
 
-        self.notify(f"SAVED → reports/results/{timestamp}", severity="information")
+        # ── 5. results.json (for full reload) ────────────────────────────────
+        import json as _json
+        def _ser(obj):
+            if isinstance(obj, dict):  return {k: _ser(v) for k, v in obj.items()}
+            if isinstance(obj, list):  return [_ser(v) for v in obj]
+            if hasattr(obj, 'isoformat'): return str(obj)
+            if isinstance(obj, float) and obj != obj: return None  # NaN
+            return obj
+        snap = {k: v for k, v in results.items()
+                if k not in ('equity_history','returns_history','drawdown_history',
+                             'price_history','timestamp_history')}
+        snap['charts'] = saved_charts
+        with open(os.path.join(save_dir, "results.json"), "w") as f:
+            _json.dump(_ser(snap), f)
+
+        self.notify(f"SAVED → reports/results/{base_name}", severity="information")
         self.log_status(f"BACKTEST SAVED: {save_dir}", "success")
+
+    def _load_backtest(self, folder_name: str) -> None:
+        import json as _json
+        proj_root  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
+        save_dir   = os.path.join(proj_root, "reports", "results", folder_name)
+        charts_dir = os.path.join(save_dir, "charts")
+
+        if not os.path.exists(save_dir):
+            self.notify("BACKTEST FOLDER NOT FOUND.", severity="error")
+            return
+
+        # ── Load results.json ─────────────────────────────────────────────────
+        results_path = os.path.join(save_dir, "results.json")
+        results: dict = {}
+        if os.path.exists(results_path):
+            try:
+                with open(results_path) as f:
+                    results = _json.load(f)
+            except Exception:
+                pass
+
+        # Fall back to chart files if results.json missing (old saves)
+        if not results.get("charts"):
+            chart_files = {
+                "main":       "vectorbt_report.html",
+                "trades":     "vectorbt_trades.html",
+                "underwater": "vectorbt_underwater.html",
+                "value":      "vectorbt_value.html",
+                "drawdowns":  "vectorbt_drawdowns.html",
+                "returns":    "vectorbt_returns.html",
+                "cash":       "vectorbt_cash.html",
+            }
+            results["charts"] = {
+                k: os.path.join(charts_dir, v)
+                for k, v in chart_files.items()
+                if os.path.exists(os.path.join(charts_dir, v))
+            }
+
+        # Ensure all stat keys exist (default 0 for old saves without results.json)
+        for key in ("total_return_pct","win_rate","total_trades","net_profit","final_balance",
+                    "max_drawdown_pct","avg_hold_hours","sharpe_ratio","sortino_ratio",
+                    "calmar_ratio","profit_factor","best_trade","worst_trade",
+                    "avg_trade_pct","avg_win_pct","avg_loss_pct","buy_hold_pct"):
+            results.setdefault(key, 0.0)
+        results.setdefault("symbol_stats", {})
+        results.setdefault("full_stats", {})
+
+        # ── Load trades.csv ───────────────────────────────────────────────────
+        trades: list[dict] = []
+        trades_csv = os.path.join(save_dir, "trades.csv")
+        if os.path.exists(trades_csv):
+            try:
+                df_t = pd.read_csv(trades_csv)
+                for _, row in df_t.iterrows():
+                    trades.append({
+                        "symbol":             str(row["symbol"]),
+                        "buy_time":           pd.to_datetime(row["buy_time"]),
+                        "sell_time":          pd.to_datetime(row["sell_time"]),
+                        "buy_price":          float(row["buy_price"]),
+                        "sell_price":         float(row["sell_price"]),
+                        "profit_pct":         float(row["profit_pct"]),
+                        "account_profit_pct": float(row.get("account_profit_pct", 0)),
+                        "profit_usd":         float(row["profit_usd"]),
+                        "investment":         float(row["investment"]),
+                        "quantity":           float(row["quantity"]),
+                        "reason":             "Buy Sig -> Sell Sig",
+                    })
+            except Exception:
+                pass
+
+        # ── Rebuild symbol_stats from trades if missing ───────────────────────
+        if not results["symbol_stats"] and trades:
+            for t in trades:
+                s = results["symbol_stats"].setdefault(t["symbol"], {"trades": 0, "wins": 0, "total_pct": 0.0})
+                s["trades"] += 1
+                if t["profit_pct"] > 0:
+                    s["wins"] += 1
+                s["total_pct"] += t["profit_pct"]
+
+        # ── Push everything into the UI via _update_results ───────────────────
+        self._update_results(results, trades)
+        self.log_status(f"[bold cyan]── LOADED: {folder_name} ──[/bold cyan]", "info")
+        self.notify(f"LOADED: {folder_name}", severity="information")
 
     def action_cancel(self) -> None:
         self.cancelled = True
@@ -951,76 +1451,113 @@ class BacktestApp(App):
         time_str = datetime.now().strftime("%H:%M:%S")
         log.write(f"[[dim]{time_str}[/dim]] [[b {color}]{level.upper()}[/b {color}]] {msg}")
 
-    def _run_backtest(self, assets, interval, balance, size, start_date, end_date, adv_params, cooldown, accumulate) -> None:
+    def _run_backtest(self, assets, interval, balance, size, start_date, end_date, adv_params, cooldown, accumulate, per_symbol_alloc=None) -> None:
+        # ── UI helpers (run on main thread, release GIL so asyncio can render) ─
+        def _prog(v: float):
+            self.app.call_from_thread(
+                lambda _v=v: self.query_one("#main-progress", ProgressBar).update(progress=_v)
+            )
+
+        def _status(msg: str):
+            self.app.call_from_thread(
+                lambda m=msg: self.query_one("#status-label", Label).update(m)
+            )
+
+        def _log(msg: str, level: str = "info", pause: float = 0.04):
+            """Write to log + update status bar, then sleep so Textual renders it."""
+            self.app.call_from_thread(lambda m=msg, l=level: self.log_status(m, l))
+            self.app.call_from_thread(lambda m=msg: self.query_one("#status-label", Label).update(m))
+            time.sleep(pause)   # release GIL → asyncio loop cycles → widget renders
+
         try:
-            progress = self.query_one("#main-progress", ProgressBar)
-            status   = self.query_one("#status-label", Label)
-            
-            # Step 1: Data Download
-            self.app.call_from_thread(lambda: self.log_status(f"FETCHING DATA: {len(assets)} ASSETS @ {interval}"))
-            self.app.call_from_thread(lambda: status.update("DOWNLOADING HISTORICAL DATA..."))
-            self.app.call_from_thread(lambda: progress.update(progress=10))
+            # ── Step 1: Data Download  (10 → 40%) ─────────────────────────────
+            _prog(10)
+            _log(f"FETCHING DATA: {len(assets)} ASSET(S) @ {interval} | {start_date} → {end_date or 'NOW'}", pause=0.05)
             if self.cancelled: return
-            binance_df = Dataframe(actives=assets, interval=interval, start_date=start_date, end_date=end_date)
-            self.app.call_from_thread(lambda: self.log_status(f"DATA ACQUIRED: {len(binance_df.df)} CANDLES LOADED", "success"))
-            
-            # Step 2: Signal Calculation
-            self.app.call_from_thread(lambda: status.update("CALCULATING STRATEGY SIGNALS..."))
-            self.app.call_from_thread(lambda: self.log_status("COMPUTING TECHNICAL INDICATORS..."))
-            self.app.call_from_thread(lambda: progress.update(progress=40))
+
+            def on_data_progress(pct: float, msg: str = None):
+                if self.cancelled: return
+                _prog(10 + pct * 30)
+                if msg:
+                    _log(msg, pause=0.04)   # sleep here too — called from pool thread
+
+            binance_df = Dataframe(
+                actives=assets, interval=interval,
+                start_date=start_date, end_date=end_date,
+                on_progress=on_data_progress,
+            )
+
+            total_candles = len(binance_df.df)
+            _prog(40)
+            _log(f"DATA READY: {total_candles:,} CANDLES ACROSS {len(assets)} ASSET(S)", "success", pause=0.06)
             if self.cancelled: return
+
+            # ── Step 2: Signal Calculation  (40 → 70%) ────────────────────────
+            _log("COMPUTING TECHNICAL INDICATORS...", pause=0.04)
+
             all_signals = []
-            num_assets = len(assets) if len(assets) > 0 else 1
+            num_assets  = max(len(assets), 1)
+
             for asset_idx, symbol in enumerate(assets):
                 if self.cancelled: return
                 symbol_df = binance_df.df[binance_df.df["symbol"] == symbol]
-                if not symbol_df.empty:
-                    self.app.call_from_thread(lambda s=symbol: self.log_status(f"PROCESSING SIGNALS: {s}"))
-                    
-                    def on_sub_progress(pct: float, msg: str = None):
-                        if self.cancelled: return
-                        base_val = 40 + (asset_idx / num_assets) * 30
-                        step_val = (1.0 / num_assets) * 30 * pct
-                        new_val = base_val + step_val
-                        self.app.call_from_thread(lambda: progress.update(progress=new_val))
-                        if msg:
-                            self.app.call_from_thread(lambda: status.update(msg))
-                            
-                    sl = SignalLogic(symbol_df, on_progress=on_sub_progress, **adv_params)
-                    all_signals.append(sl.df)
-            
+                if symbol_df.empty:
+                    _log(f"NO DATA FOR {symbol} — SKIPPED", "warning", pause=0.04)
+                    continue
+
+                base_pct = 40 + (asset_idx / num_assets) * 30
+                _prog(base_pct)
+                _log(f"SIGNALS [{asset_idx + 1}/{num_assets}]: {symbol}  ({len(symbol_df):,} candles)", pause=0.04)
+
+                def on_sub_progress(pct: float, msg: str = None, _idx=asset_idx):
+                    if self.cancelled: return
+                    _prog(40 + (_idx / num_assets) * 30 + (30.0 / num_assets) * pct)
+                    if msg:
+                        _log(msg, pause=0.03)
+
+                sl = SignalLogic(symbol_df, on_progress=on_sub_progress, **adv_params)
+                all_signals.append(sl.df)
+
             if not all_signals:
-                self.app.call_from_thread(lambda: self.log_status("NO MARKET DATA TO PROCESS", "error"))
+                _log("NO MARKET DATA TO PROCESS", "error", pause=0.04)
                 self.app.call_from_thread(lambda: self.notify("NO DATA FOUND.", severity="error"))
                 return
-            
+
             unified_signals = pd.concat(all_signals)
-            
-            # Step 3: Simulation
-            self.app.call_from_thread(lambda: self.log_status("INITIALIZING VECTORBT ENGINE..."))
-            self.app.call_from_thread(lambda: status.update("SIMULATING MARKET TRADES..."))
-            self.app.call_from_thread(lambda: progress.update(progress=70))
-            engine = BacktestEngine(unified_signals, initial_balance=balance, position_size_pct=size, cooldown=cooldown, accumulate=accumulate)
-            
-            def on_engine_progress(pct: float):
+            _prog(70)
+            _log("ALL SIGNALS COMPUTED — STARTING ENGINE...", "success", pause=0.06)
+            if self.cancelled: return
+
+            # ── Step 3: Engine Simulation  (70 → 100%) ────────────────────────
+            _log("INITIALIZING VECTORBT PORTFOLIO ENGINE...", pause=0.04)
+
+            engine = BacktestEngine(
+                unified_signals, initial_balance=balance, position_size_pct=size,
+                cooldown=cooldown, accumulate=accumulate, per_symbol_alloc=per_symbol_alloc,
+            )
+
+            def on_engine_progress(pct: float, msg: str = None):
                 if self.cancelled: return
-                new_val = 70 + (pct * 30)
-                self.app.call_from_thread(lambda: progress.update(progress=new_val))
+                _prog(70 + pct * 30)
+                if msg:
+                    _log(msg, pause=0.04)
 
             results = engine.run(on_progress=on_engine_progress)
             if self.cancelled: return
-            
-            self.app.call_from_thread(lambda: self.log_status(f"SIMULATION COMPLETE: {len(engine.trades)} TRADES EXECUTED", "success"))
-            self.app.call_from_thread(lambda: progress.update(progress=100))
-            self.app.call_from_thread(lambda: status.update("[bold green]BACKTEST COMPLETE[/bold green]"))
+
+            _prog(100)
+            _log(f"SIMULATION COMPLETE — {len(engine.trades)} TRADES EXECUTED", "success", pause=0.06)
+            self.app.call_from_thread(
+                lambda: self.query_one("#status-label", Label).update("[bold green]BACKTEST COMPLETE[/bold green]")
+            )
             self.app.call_from_thread(self._update_results, results, engine.trades)
-            
+
         except Exception as e:
             import traceback
             import os
             self.app.call_from_thread(lambda: self.log_status(f"CRITICAL ERROR: {e}", "error"))
             proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
-            err_dir = os.path.join(proj_root, "reports", "errors")
+            err_dir   = os.path.join(proj_root, "reports", "errors")
             os.makedirs(err_dir, exist_ok=True)
             with open(os.path.join(err_dir, "error.log"), "a") as f:
                 f.write(f"{datetime.now()}: {e}\n{traceback.format_exc()}\n")
@@ -1125,16 +1662,7 @@ class BacktestApp(App):
         self.query_one("#ext-metrics-content", Static).update("\n".join(metrics_lines))
 
 
-        # Reveal chart buttons if their respective reports exist
         self.charts = results.get("charts", {})
-        
-        import os
-        for btn in self.query(".chart-btn"):
-            chart_type = btn.id.replace("open-chart-", "")
-            if self.charts and chart_type in self.charts and os.path.exists(self.charts[chart_type]):
-                btn.add_class("visible")
-            else:
-                btn.remove_class("visible")
 
         # ── CHART tab — per-symbol breakdown ──
         sym_table = self.query_one("#symbol-table", DataTable)
@@ -1153,8 +1681,30 @@ class BacktestApp(App):
         self._last_trades = trades
         self.query_one("#save-btn", Button).add_class("visible")
 
+        symbols = sorted(set(t["symbol"] for t in trades))
+        asset_select = self.query_one("#asset-chart-select", Select)
+        options = [("ALL ASSETS", "__ALL__")] + [(s, s) for s in symbols]
+        asset_select.set_options(options)
+        asset_select.value = "__ALL__"
+        asset_select.add_class("visible")
+        self._apply_asset_filter("__ALL__")
+
+        # Store for deferred render — PIE tab content is lazy-mounted by Textual
+        self._pie_markup = self._draw_pie_chart()
+
         self.notify("PORTFOLIO SEQUENCE COMPLETE.", severity="information")
         self.query_one("#results-tabs", TabbedContent).active = "tab-stats"
+
+    @on(TabbedContent.TabActivated, "#results-tabs")
+    def on_results_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        if getattr(event.pane, "id", None) == "tab-pie":
+            markup = getattr(self, "_pie_markup", "")
+            try:
+                self.query_one("#assets-pie", Static).update(
+                    markup or "[dim #555555]  Run a backtest to see the asset pie.[/dim #555555]"
+                )
+            except Exception:
+                pass
 
     @on(DataTable.HeaderSelected)
     def on_header_click(self, event: DataTable.HeaderSelected):

@@ -1,6 +1,6 @@
 %% Eggshell Backtester — Module Dependency Map
 %% Render at https://mermaid.live or open reports/estructura.html
-%% Last updated: 2026-05-10 — added Save Backtest feature (reports/results/)
+%% Last updated: 2026-05-10
 
 flowchart TD
 
@@ -8,24 +8,28 @@ flowchart TD
 
   subgraph UI["UI Layer"]
     TUI["ui/tui.py · BacktestApp"]
-    SAVEBTN["_save_backtest() · SAVE BACKTEST button"]
+    SAVE["_save_backtest() · modal → reports/results/NAME/"]
+    LOAD["_load_backtest() · modal → restores full UI state"]
+    PIE["_draw_pie_chart() · braille Unicode pie (tab PIE)"]
+    ALLOC["#alloc-section · per-asset % inputs (sum=100%)"]
   end
 
   subgraph CORE["Core Engine"]
-    SL["core/signal_logic.py · SignalLogic"]
-    BE["core/backtest_engine.py · BacktestEngine"]
-    CONST["core/constants.py · CONFIG_REGISTRY / STRATEGY_SCHEMAS"]
+    SL["core/signal_logic.py · SignalLogic · on_progress callback"]
+    BE["core/backtest_engine.py · BacktestEngine · on_progress(pct, msg)"]
+    CONST["core/constants.py · STRATEGY_SCHEMAS / ConnectConstants"]
   end
 
   subgraph DATA["Binance Data Layer"]
-    DF["binance_service/dataframe.py · Dataframe (cache + fetch)"]
+    DF["binance_service/dataframe.py · Dataframe · on_progress callback"]
+    CACHE["cache/{SYM}_{interval}.parquet · per-symbol cache files"]
     CONN["binance_service/connect.py · Connect"]
   end
 
   subgraph STRAT["Strategies"]
     EBS["Elliot_bollinger/strategy.py · ElliotBollingerStrategy"]
     EBC["Elliot_bollinger/constants.py"]
-    EMAS["Ema_cross/strategy.py · EMACrossStrategy"]
+    EMAS["Ema_cross/strategy.py · EMACrossStrategy · on_progress steps"]
     EMAC["Ema_cross/constants.py"]
   end
 
@@ -38,27 +42,42 @@ flowchart TD
     OLLAMA["ollama (localhost:11434)"]
   end
 
-  subgraph REPORTS["Reports Output (reports/)"]
+  subgraph REPORTS["reports/  (git-ignored content, dirs tracked via .gitkeep)"]
     RCHARTS["charts/ · live HTML charts (overwritten each run)"]
-    RRESULTS["results/YYYYMMDD_HHMMSS/ · saved snapshots"]
-    RSTATS["  └─ stats.txt · full metrics log"]
-    RTRADES["  └─ trades.csv · trade records"]
-    RCOPY["  └─ charts/ · copied HTML charts"]
+    RRESULTS["results/NAME/ · named saved snapshots"]
+    RSTATS["  ├─ stats.txt · full metrics log"]
+    RTRADES["  ├─ trades.csv · trade records"]
+    RJSON["  ├─ results.json · full results dict for reload"]
+    RCOPY["  ├─ charts/ · copied HTML charts"]
     RLINKS["  └─ charts_links.html · local file:// hyperlinks"]
     RERR["errors/error.log · runtime errors"]
   end
 
-  MAIN --> TUI & DF & SL & BE
+  subgraph GITIGNORE[".gitignore rules"]
+    IGN1["cache/*.parquet  cache/*.pkl"]
+    IGN2["reports/charts/*.html"]
+    IGN3["reports/errors/error.log"]
+    IGN4["reports/results/"]
+    IGN5["config/ui_settings.json"]
+  end
+
+  MAIN --> TUI
   TUI  --> DF & SL & BE & CONST & TEXTUAL
-  TUI  --> SAVEBTN
-  SAVEBTN --> RRESULTS
-  RRESULTS --> RSTATS & RTRADES & RCOPY & RLINKS
+  TUI  --> SAVE & LOAD & PIE & ALLOC
+  SAVE --> RRESULTS
+  RRESULTS --> RSTATS & RTRADES & RJSON & RCOPY & RLINKS
+  LOAD --> RRESULTS
+  PIE  --> ALLOC
   SL   --> EMAS & EBS
   BE   --> CONST & VBT & PLOTLY
   BE   --> RCHARTS & RERR
-  DF   --> CONST & CONN
+  DF   --> CACHE & CONN
   CONN --> BAPI
   CONST --> EBC & EMAC
   EBS  --> EBC & OLLAMA
   EMAS --> EMAC
   MAIN --> RICH
+  CACHE -.gitignore.-> IGN1
+  RCHARTS -.gitignore.-> IGN2
+  RERR -.gitignore.-> IGN3
+  RRESULTS -.gitignore.-> IGN4

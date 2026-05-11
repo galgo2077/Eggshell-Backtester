@@ -1,28 +1,29 @@
-# Use official slim Python 3.11 image
-FROM python:3.11-slim
+FROM nvidia/cuda:12.1.0-cudnn8-runtime-ubuntu22.04
 
-# Set runtime environment config
 ENV PYTHONDONTWRITEBYTECODE=1
 ENV PYTHONUNBUFFERED=1
 ENV PYTHONPATH=/app/src
+ENV DEBIAN_FRONTEND=noninteractive
 
-# Install build tools for numerical acceleration packages
 RUN apt-get update && apt-get install -y --no-install-recommends \
+    python3.11 \
+    python3.11-dev \
+    python3-pip \
     build-essential \
     gcc \
     && rm -rf /var/lib/apt/lists/*
 
-# Designate container base operations
+RUN ln -sf /usr/bin/python3.11 /usr/bin/python && \
+    ln -sf /usr/bin/python3.11 /usr/bin/python3
+
 WORKDIR /app
 
-# Optimized Dependency Cache Injection (Flat layout compatible)
 COPY config/requirements.txt ./config/requirements.txt
 
-# Direct library stack resolution
-RUN pip install --no-cache-dir -r config/requirements.txt
+RUN pip install --no-cache-dir --upgrade pip && \
+    pip install --no-cache-dir -r config/requirements.txt && \
+    pip install --no-cache-dir cupy-cuda12x
 
-# Bulk merge application sources
 COPY . .
 
-# System Command Target (TUI integration enabled)
-CMD ["python", "src/main.py"]
+CMD ["python", "src/main.py", "--cli"]
