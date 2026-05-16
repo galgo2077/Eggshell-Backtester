@@ -445,6 +445,24 @@ class BacktestApp(App):
     .alloc-input { width: 8; }
     #alloc-total { text-align: right; margin-top: 1; text-style: bold; color: #00ff00; }
     #alloc-total.invalid { color: #ff0000; }
+
+    #dual-strategy-panel { margin-top: 1; border-top: solid #333333; padding-top: 1; height: auto; }
+    #dual-strategy-panel Label { margin-top: 1; color: #888888; }
+    #dual-slot-btn-a, #dual-slot-btn-b { width: 1fr; }
+    #dual-slot-btn-a.active-slot, #dual-slot-btn-b.active-slot { background: #00ffff; color: #000000; text-style: bold; }
+
+    /* Portfolio managed backtest */
+    .portfolio-badge {
+        background: #0a2a0a;
+        color: #00ff00;
+        text-style: bold;
+        text-align: center;
+        border: solid #00ff00;
+        margin: 1 0;
+        padding: 0 1;
+        height: 2;
+    }
+    #allocation-container { max-height: 14; border: solid #1a1a1a; }
     """
 
     BINDINGS = [
@@ -456,74 +474,180 @@ class BacktestApp(App):
 
     def __init__(self, **kwargs):
         super().__init__(**kwargs)
-        self.sort_states = {} # Tracks column_key -> ascending (bool)
+        self.sort_states = {}
         self._active_settings = {}
         self._loading_settings = False
+        self._dual_active_slot = "a"
 
     def rebuild_strategy_and_risk_tabs(self, strategy_name: str) -> None:
         schema = STRATEGY_SCHEMAS.get(strategy_name, STRATEGY_SCHEMAS["EMA_CROSS"])
-        
+
         # 1. Rebuild Strategy Tab
         try:
             strat_container = self.query_one("#dynamic-strategy-container", VerticalScroll)
             strat_container.remove_children()
-            
+
+            if strategy_name == "DUAL_STRATEGY":
+                saved = getattr(self, "_active_settings", {})
+                try:
+                    a_name = self.query_one("#opt_dual_strategy_strategy_a", Select).value or "EMA_CROSS"
+                except Exception:
+                    a_name = "EMA_CROSS"
+                try:
+                    b_name = self.query_one("#opt_dual_strategy_strategy_b", Select).value or "ELLIOT_BOLLINGER"
+                except Exception:
+                    b_name = "ELLIOT_BOLLINGER"
+
+                slot = getattr(self, "_dual_active_slot", "a")
+                name = a_name if slot == "a" else b_name
+
+                btn_a = Button("◀ STRATEGY A", id="dual-slot-btn-a")
+                btn_b = Button("STRATEGY B ▶", id="dual-slot-btn-b")
+                if slot == "a":
+                    btn_a.add_class("active-slot")
+                else:
+                    btn_b.add_class("active-slot")
+                strat_container.mount(Horizontal(btn_a, btn_b, classes="sel-btn-row"))
+
+                slot_schema = STRATEGY_SCHEMAS.get(name, {})
+                for section_name, fields in slot_schema.items():
+                    slot_widgets = []
+                    for field_name, field_info in fields.items():
+                        if field_name == "ENABLED_SELL": continue
+                        w_id = f"opt_dual_{slot}_{field_name}".lower()
+                        val = saved.get(w_id, field_info["default"])
+                        slot_widgets.append(Label(field_info["label"]))
+                        if field_info["type"] == "bool":
+                            slot_widgets.append(Switch(value=bool(val), id=w_id))
+                        else:
+                            slot_widgets.append(Input(str(val), id=w_id))
+                    if slot_widgets:
+                        title = f"STRATEGY {slot.upper()} — {name.replace('_', ' ')} — {section_name}"
+                        strat_container.mount(
+                            Collapsible(*slot_widgets, title=title, classes="indicator-collapsible")
+                        )
+                return
+
+            saved = getattr(self, "_active_settings", {})
             for section_name, fields in schema.items():
                 if section_name == "RISK": continue
                 widgets = []
                 for field_name, field_info in fields.items():
                     w_id = f"opt_{strategy_name}_{field_name}".lower()
-                    val = field_info["default"]
-                    
-                    if hasattr(self, "_active_settings") and self._active_settings:
-                        val = self._active_settings.get(w_id, val)
-                    
+                    val = saved.get(w_id, field_info["default"])
                     widgets.append(Label(field_info["label"]))
                     if field_info["type"] == "bool":
                         widgets.append(Switch(value=bool(val), id=w_id))
                     else:
                         widgets.append(Input(str(val), id=w_id))
-                
                 if widgets:
                     strat_container.mount(
-                        Collapsible(
-                            *widgets,
-                            title=f"{section_name} CONFIGURATION",
-                            classes="indicator-collapsible"
+                        Collapsible(*widgets, title=f"{section_name} CONFIGURATION", classes="indicator-collapsible")
+                    )
+
+            # RISK fields (excluding ENABLED_SELL) → collapsible in STRATEGY tab
+            risk_extra = {k: v for k, v in schema.get("RISK", {}).items() if k != "ENABLED_SELL"}
+            if risk_extra:
+                risk_widgets = []
+                for field_name, field_info in risk_extra.items():
+                    w_id = f"opt_{strategy_name}_{field_name}".lower()
+                    val = saved.get(w_id, field_info["default"])
+                    risk_widgets.append(Label(field_info["label"]))
+                    if field_info["type"] == "bool":
+                        risk_widgets.append(Switch(value=bool(val), id=w_id))
+                    else:
+                        risk_widgets.append(Input(str(val), id=w_id))
+                strat_container.mount(
+                    Collapsible(*risk_widgets, title="RISK CONFIGURATION", classes="indicator-collapsible")
+                )
+        except Exception:
+            pass
+
+        # 2. ENABLED_SELL only → RISK tab dynamic container
+        try:
+            risk_container = self.query_one("#dynamic-risk-container", Vertical)
+            risk_container.remove_children()
+            if strategy_name != "DUAL_STRATEGY":
+                enabled_sell_info = schema.get("RISK", {}).get("ENABLED_SELL")
+                if enabled_sell_info:
+                    saved = getattr(self, "_active_settings", {})
+                    w_id = f"opt_{strategy_name}_enabled_sell"
+                    val = saved.get(w_id, enabled_sell_info["default"])
+                    risk_container.mount(
+                        Horizontal(
+                            Label(enabled_sell_info["label"]),
+                            Switch(value=bool(val), id=w_id),
+                            classes="inline-field"
                         )
                     )
         except Exception:
             pass
-            
-        # 2. Rebuild Dynamic Risk Container
+
+    def _collect_dual_slot_params(self, slot: str, strategy_name: str) -> dict:
+        schema = STRATEGY_SCHEMAS.get(strategy_name, {})
+        result = {}
+        for section in schema.values():
+            for field, info in section.items():
+                w_id = f"opt_dual_{slot}_{field}".lower()
+                try:
+                    val = self.query_one(f"#{w_id}").value
+                    if info["type"] == "bool":
+                        result[field] = bool(val)
+                    elif info["type"] == "int":
+                        result[field] = int(val) if str(val).strip() else info["default"]
+                    elif info["type"] == "float":
+                        result[field] = float(val) if str(val).strip() else info["default"]
+                except Exception:
+                    result[field] = info["default"]
+        return result
+
+    @on(Button.Pressed, "#dual-slot-btn-a")
+    def on_dual_slot_a(self) -> None:
+        self._dual_active_slot = "a"
+        self.rebuild_strategy_and_risk_tabs("DUAL_STRATEGY")
+
+    @on(Button.Pressed, "#dual-slot-btn-b")
+    def on_dual_slot_b(self) -> None:
+        self._dual_active_slot = "b"
+        self.rebuild_strategy_and_risk_tabs("DUAL_STRATEGY")
+
+    @on(Select.Changed, "#opt_dual_strategy_strategy_a")
+    def on_dual_a_changed(self, event: Select.Changed) -> None:
+        if not event.value:
+            return
         try:
-            risk_container = self.query_one("#dynamic-risk-container", Vertical)
-            risk_container.remove_children()
-            
-            for field_name, field_info in schema.get("RISK", {}).items():
-                w_id = f"opt_{strategy_name}_{field_name}".lower()
-                val = field_info["default"]
-                if hasattr(self, "_active_settings") and self._active_settings:
-                    val = self._active_settings.get(w_id, val)
-                    
-                control = Switch(value=bool(val), id=w_id) if field_info["type"] == "bool" else Input(str(val), id=w_id)
-                
-                row = Horizontal(
-                    Label(field_info["label"]),
-                    control,
-                    classes="inline-field"
-                )
-                risk_container.mount(row)
+            if self.query_one("#strategy-select", Select).value != "DUAL_STRATEGY":
+                return
         except Exception:
-            pass
+            return
+        self._save_ui_settings()
+        self.rebuild_strategy_and_risk_tabs("DUAL_STRATEGY")
+
+    @on(Select.Changed, "#opt_dual_strategy_strategy_b")
+    def on_dual_b_changed(self, event: Select.Changed) -> None:
+        if not event.value:
+            return
+        try:
+            if self.query_one("#strategy-select", Select).value != "DUAL_STRATEGY":
+                return
+        except Exception:
+            return
+        self._save_ui_settings()
+        self.rebuild_strategy_and_risk_tabs("DUAL_STRATEGY")
 
     @on(Select.Changed, "#strategy-select")
     def on_strategy_changed(self, event: Select.Changed) -> None:
         if event.value:
-            # CRITICAL: Save current visual adjustments BEFORE unmounting the widgets,
-            # otherwise pending unsaved changes are annihilated during rebuilding!
             self._save_ui_settings()
             self.rebuild_strategy_and_risk_tabs(event.value)
+            try:
+                dual_panel = self.query_one("#dual-strategy-panel")
+                if event.value == "DUAL_STRATEGY":
+                    dual_panel.remove_class("hidden")
+                else:
+                    dual_panel.add_class("hidden")
+            except Exception:
+                pass
 
     def on_mount(self) -> None:
         self.title = "EGGSHELL BACKTESTER v1.1"
@@ -580,7 +704,15 @@ class BacktestApp(App):
             # 2. Trigger strategy-specific sub-DOM reconstruction
             strat_to_load = loaded.get("strategy-select", default_strat)
             self.rebuild_strategy_and_risk_tabs(strat_to_load)
-            
+            try:
+                dual_panel = self.query_one("#dual-strategy-panel")
+                if strat_to_load == "DUAL_STRATEGY":
+                    dual_panel.remove_class("hidden")
+                else:
+                    dual_panel.add_class("hidden")
+            except Exception:
+                pass
+
             # 3. Automatically restore checkboxes
             self._loading_settings = True
             saved_assets = set(loaded.get("assets", ["BTCUSDT"]))
@@ -614,15 +746,27 @@ class BacktestApp(App):
                 with VerticalScroll(id="config-scroll"):
                     yield Static(logo_ascii, id="app-logo")
                     yield Label("── EGGSHELL BACKTESTER v1.1 ──", classes="box-title")
-                    with TabbedContent():
+                    with TabbedContent(id="config-tabs"):
                         with TabPane("STRATEGY SELECT"):
                             with VerticalScroll():
                                 yield Label("CHOOSE ACTIVE STRATEGY", classes="box-subtitle")
                                 yield Select(
                                     [(k.replace("_", " ").title(), k) for k in STRATEGY_SCHEMAS.keys()],
-                                    value=list(STRATEGY_SCHEMAS.keys())[0] if STRATEGY_SCHEMAS else None, 
+                                    value=list(STRATEGY_SCHEMAS.keys())[0] if STRATEGY_SCHEMAS else None,
                                     id="strategy-select",
                                 )
+                                _sub = [(k.replace("_", " ").title(), k) for k in STRATEGY_SCHEMAS.keys() if k != "DUAL_STRATEGY"]
+                                _sub_b_default = _sub[1][1] if len(_sub) > 1 else _sub[0][1]
+                                with Vertical(id="dual-strategy-panel", classes="hidden"):
+                                    yield Label("SIGNAL CONDITION")
+                                    yield Select(
+                                        [("AND  — Both signals required", "AND"), ("OR  — Either signal triggers", "OR")],
+                                        value="AND", id="opt_dual_strategy_condition",
+                                    )
+                                    yield Label("STRATEGY A")
+                                    yield Select(_sub, value="EMA_CROSS", id="opt_dual_strategy_strategy_a")
+                                    yield Label("STRATEGY B")
+                                    yield Select(_sub, value=_sub_b_default, id="opt_dual_strategy_strategy_b")
                         with TabPane("BASIC"):
                             with VerticalScroll():
                                 with Collapsible(title="ASSET SELECTION", id="asset-collapsible"):
@@ -664,15 +808,16 @@ class BacktestApp(App):
                         with TabPane("STRATEGY"):
                             yield VerticalScroll(id="dynamic-strategy-container")
 
-                        with TabPane("RISK"):
+                        with TabPane("RISK", id="tab-risk-pane"):
                             with VerticalScroll():
+                                yield Static("", id="portfolio-mode-badge", classes="hidden portfolio-badge")
                                 with Horizontal(classes="date-header-row"):
                                     yield Label("BUDGET PER TRADE (%) ")
                                     yield Label("●", id="size-status", classes="date-status-ok")
                                 yield Input("20", id="size-input")
                                 with Vertical(id="alloc-section"):
-                                    yield Static("── ASSET ALLOCATION ──", classes="section-header")
-                                    yield Vertical(id="allocation-container")
+                                    yield Static("── PORTFOLIO ALLOCATION ──", classes="section-header")
+                                    yield VerticalScroll(id="allocation-container")
                                     yield Label("TOTAL: 0.0%", id="alloc-total")
                                 with Horizontal(classes="inline-field"):
                                     yield Label("COOLDOWN (CANDLES)")
@@ -977,13 +1122,20 @@ class BacktestApp(App):
                         adv_params[field] = int(val) if str(val).strip() != "" else info["default"]
                     elif info["type"] == "float":
                         adv_params[field] = float(val) if str(val).strip() != "" else info["default"]
+                    elif info["type"] == "str":
+                        adv_params[field] = str(val) if val and val is not Select.BLANK else info["default"]
                 except Exception:
-                    # Fallback to previously active loaded setting if widget is detached
                     if hasattr(self, "_active_settings") and w_id in self._active_settings:
                         adv_params[field] = self._active_settings[w_id]
                     else:
                         adv_params[field] = info["default"]
-                        
+
+            if strategy_name == "DUAL_STRATEGY":
+                a_name = adv_params.get("STRATEGY_A", "EMA_CROSS")
+                b_name = adv_params.get("STRATEGY_B", "ELLIOT_BOLLINGER")
+                adv_params["PARAMS_A"] = self._collect_dual_slot_params("a", a_name)
+                adv_params["PARAMS_B"] = self._collect_dual_slot_params("b", b_name)
+
             # Per-symbol allocation
             per_symbol_alloc = None
             if len(assets) >= 2:
@@ -1000,7 +1152,8 @@ class BacktestApp(App):
             return {
                 "assets": assets, "interval": interval, "balance": balance, "size": size,
                 "start_date": start_date, "end_date": end_date, "adv_params": adv_params,
-                "cooldown": cooldown, "accumulate": True, "per_symbol_alloc": per_symbol_alloc,
+                "cooldown": cooldown, "accumulate": True,
+                "per_symbol_alloc": per_symbol_alloc,
             }, None
         except ValueError as exc:
             return None, f"INVALID INPUT: {exc}"
@@ -1028,15 +1181,26 @@ class BacktestApp(App):
 
     def _draw_pie_chart(self) -> str:
         import math
-        results = getattr(self, "_last_results", None)
-        if not results:
-            return "\n[dim #555555]  Run a backtest to see the asset pie.[/dim #555555]"
-        sym_stats = results.get("symbol_stats", {})
-        symbols   = sorted(sym_stats.keys())
-        if not symbols:
-            return "\n[dim #555555]  No trades recorded.[/dim #555555]"
+        results   = getattr(self, "_last_results", None)
+        COLORS    = ['#818cf8','#34d399','#fb7185','#fbbf24','#22d3ee','#a78bfa','#f97316','#84cc16']
 
-        COLORS = ['#818cf8','#34d399','#fb7185','#fbbf24','#22d3ee','#a78bfa','#f97316','#84cc16']
+        # Collect live-selected assets for pre-run preview
+        try:
+            live_assets = [str(cb.label) for cb in self.query("#asset-checkbox-container Checkbox") if cb.value]
+        except Exception:
+            live_assets = []
+
+        if not results:
+            if len(live_assets) < 2:
+                return "\n[dim #555555]  Run a backtest to see the asset pie.[/dim #555555]"
+            # Pre-run preview — show allocation only
+            symbols   = sorted(live_assets)
+            sym_stats = {}
+        else:
+            sym_stats = results.get("symbol_stats", {})
+            symbols   = sorted(sym_stats.keys())
+            if not symbols:
+                return "\n[dim #555555]  No trades recorded.[/dim #555555]"
 
         alloc: dict[str, float] = {}
         for sym in symbols:
@@ -1099,30 +1263,47 @@ class BacktestApp(App):
 
         # ── Stats table ───────────────────────────────────────────────────────
         sep = "[#1f2937]" + "─" * 52 + "[/#1f2937]"
+        is_preview = not bool(sym_stats)
+        header_label = "── PORTFOLIO PREVIEW ──" if is_preview else "── ASSET ALLOCATION PIE ──"
+
         tbl = [
             "",
-            f"[bold #00ffff]  {'SYM':<7} {'ALLOC':>6}  {'P&L%':>8}  {'WIN%':>6}  {'TRADES':>6}[/bold #00ffff]",
+            f"[bold #00ffff]  {'SYM':<7} {'ALLOC':>6}  {'BUD%/T':>6}  {'P&L%':>8}  {'WIN%':>6}  {'TRADES':>6}[/bold #00ffff]",
             sep,
         ]
         for i, sym in enumerate(symbols):
-            s       = sym_stats[sym]
+            s       = sym_stats.get(sym, {})
             col_str = COLORS[i % len(COLORS)]
             a       = alloc.get(sym, 100.0 / len(symbols))
+            try:
+                bud = float(self.query_one(f"#budget-{sym}", Input).value)
+                bud_str = f"{bud:.0f}%"
+            except Exception:
+                try:
+                    bud_str = self.query_one("#size-input", Input).value + "%"
+                except Exception:
+                    bud_str = "-"
             pnl     = s.get("total_pct", 0.0)
             t       = s.get("trades", 0)
             wr      = s.get("wins", 0) / t * 100 if t else 0.0
-            pc      = "green" if pnl >= 0 else "red"
+            pc      = "green" if pnl >= 0 else ("dim" if is_preview else "red")
             short   = sym.replace("USDT", "")
+            pnl_col = f"[dim #555555]{'--':>7}[/dim #555555]" if is_preview else f"[{pc}]{pnl:+7.2f}%[/{pc}]"
+            wr_col  = f"[dim #555555]{'--':>5}[/dim #555555]"  if is_preview else f"[cyan]{wr:5.1f}%[/cyan]"
+            t_col   = f"[dim #555555]{'--':>5}[/dim #555555]"  if is_preview else f"[white]{t:5d}[/white]"
             tbl.append(
                 f"  [{col_str}]⣿[/{col_str}] [white]{short:<7}[/white]"
                 f" [yellow]{a:5.1f}%[/yellow]"
-                f"  [{pc}]{pnl:+7.2f}%[/{pc}]"
-                f"  [cyan]{wr:5.1f}%[/cyan]"
-                f"  [white]{t:5d}[/white]"
+                f"  [magenta]{bud_str:>5}[/magenta]"
+                f"  {pnl_col}"
+                f"  {wr_col}"
+                f"  {t_col}"
             )
         tbl.append(sep)
+        if is_preview:
+            tbl.append("[dim #555555]  Run backtest to populate P&L stats.[/dim #555555]")
 
-        header = "\n[bold #00ffff]  ── ASSET ALLOCATION PIE ──[/bold #00ffff]\n"
+        header = f"\n[bold #00ffff]  {header_label}[/bold #00ffff]\n"
         return header + "\n".join(rows) + "\n" + "\n".join(tbl)
 
     def _apply_asset_filter(self, value) -> None:
@@ -1162,22 +1343,26 @@ class BacktestApp(App):
 
     def _rebuild_allocation_inputs(self, reset: bool = True) -> None:
         try:
-            assets = [str(cb.label) for cb in self.query("#asset-checkbox-container Checkbox") if cb.value]
-            container = self.query_one("#allocation-container")
+            assets        = [str(cb.label) for cb in self.query("#asset-checkbox-container Checkbox") if cb.value]
+            container     = self.query_one("#allocation-container", VerticalScroll)
             alloc_section = self.query_one("#alloc-section")
+            badge         = self.query_one("#portfolio-mode-badge", Static)
             container.remove_children()
+
             if len(assets) < 2:
                 alloc_section.remove_class("visible")
+                badge.add_class("hidden")
                 return
+
             alloc_section.add_class("visible")
+            badge.remove_class("hidden")
+            badge.update(f"⬡  PORTFOLIO MODE — {len(assets)} ASSETS")
+
             n = len(assets)
             base_pct = round(100.0 / n, 2)
             pcts = [base_pct] * (n - 1) + [round(100.0 - base_pct * (n - 1), 2)]
             for asset, default_pct in zip(assets, pcts):
-                if reset:
-                    val = str(default_pct)
-                else:
-                    val = str(self._active_settings.get(f"alloc-{asset}", default_pct))
+                val = str(default_pct) if reset else str(self._active_settings.get(f"alloc-{asset}", default_pct))
                 container.mount(Horizontal(
                     Label(asset.replace("USDT", ""), classes="alloc-label"),
                     Input(val, id=f"alloc-{asset}", classes="alloc-input"),
@@ -1206,10 +1391,36 @@ class BacktestApp(App):
         except Exception:
             pass
 
+    def _refresh_pie_live(self) -> None:
+        try:
+            markup = self._draw_pie_chart()
+            self._pie_markup = markup
+            tc = self.query_one("#results-tabs", TabbedContent)
+            if getattr(tc, "active", None) == "tab-pie":
+                self.query_one("#assets-pie", Static).update(markup)
+        except Exception:
+            pass
+
+    @on(Input.Changed, ".alloc-input")
+    def on_alloc_input_changed(self, event: Input.Changed) -> None:
+        self._update_alloc_total()
+        self._refresh_pie_live()
+
+    @on(TabbedContent.TabActivated, "#config-tabs")
+    def on_config_tab_activated(self, event: TabbedContent.TabActivated) -> None:
+        if getattr(event.pane, "id", None) == "tab-risk-pane":
+            self._rebuild_allocation_inputs(reset=False)
+            # Switch right panel to PIE for live portfolio preview
+            try:
+                self.query_one("#results-tabs", TabbedContent).active = "tab-pie"
+            except Exception:
+                pass
+
     @on(Checkbox.Changed, ".asset-checkbox")
     def on_asset_toggled(self, event: Checkbox.Changed) -> None:
         if not self._loading_settings:
             self._rebuild_allocation_inputs(reset=True)
+            self._refresh_pie_live()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel-btn":
@@ -1698,10 +1909,11 @@ class BacktestApp(App):
     @on(TabbedContent.TabActivated, "#results-tabs")
     def on_results_tab_activated(self, event: TabbedContent.TabActivated) -> None:
         if getattr(event.pane, "id", None) == "tab-pie":
-            markup = getattr(self, "_pie_markup", "")
+            markup = self._draw_pie_chart()
+            self._pie_markup = markup
             try:
                 self.query_one("#assets-pie", Static).update(
-                    markup or "[dim #555555]  Run a backtest to see the asset pie.[/dim #555555]"
+                    markup or "[dim #555555]  Select 2+ assets to preview allocation.[/dim #555555]"
                 )
             except Exception:
                 pass

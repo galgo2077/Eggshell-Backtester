@@ -41,8 +41,8 @@ CONFIG_REGISTRY = [
     {"Strategy": "EMA_CROSS", "Category": "STRATEGY", "Key": "ENABLED_MFI", "Type": "bool", "Default": ema_const.ENABLED_MFI, "Label": "ENABLED MFI"},
     {"Strategy": "EMA_CROSS", "Category": "STRATEGY", "Key": "MFI_LENGTH", "Type": "int", "Default": ema_const.MFI_LENGTH, "Label": "MFI LENGTH"},
     {"Strategy": "EMA_CROSS", "Category": "RISK", "Key": "ENABLED_SELL", "Type": "bool", "Default": ema_const.ENABLED_SELL, "Label": "ENABLE SELL"},
-    {"Strategy": "EMA_CROSS", "Category": "RISK", "Key": "BUY_LEVEL", "Type": "float", "Default": ema_const.BUY_LEVEL, "Label": "BUY CONDITION (MFI)"},
-    {"Strategy": "EMA_CROSS", "Category": "RISK", "Key": "SELL_LEVEL", "Type": "float", "Default": ema_const.SELL_LEVEL, "Label": "SELL CONDITION (MFI)"},
+    {"Strategy": "EMA_CROSS", "Category": "RISK", "Key": "BUY_LEVEL", "Type": "float", "Default": ema_const.BUY_LEVEL, "Label": "MFI BUY LEVEL"},
+    {"Strategy": "EMA_CROSS", "Category": "RISK", "Key": "SELL_LEVEL", "Type": "float", "Default": ema_const.SELL_LEVEL, "Label": "MFI SELL LEVEL"},
     
     # ELLIOTT BOLLINGER STRATEGY
     {"Strategy": "ELLIOT_BOLLINGER", "Category": "STRATEGY", "Key": "FAST_EMA", "Type": "int", "Default": elliot_const.EMA_FAST, "Label": "FAST EMA (EMA 10)"},
@@ -53,6 +53,11 @@ CONFIG_REGISTRY = [
     {"Strategy": "ELLIOT_BOLLINGER", "Category": "STRATEGY", "Key": "PIVOT_MIN_DIST_DIVISOR", "Type": "int", "Default": elliot_const.PIVOT_MIN_DIST_DIVISOR, "Label": "PIVOT MIN DIST DIVISOR"},
     {"Strategy": "ELLIOT_BOLLINGER", "Category": "RISK", "Key": "ENABLED_SELL", "Type": "bool", "Default": True, "Label": "ENABLE SELL"},
     {"Strategy": "ELLIOT_BOLLINGER", "Category": "RISK", "Key": "AI_ANALYSIS_INTERVAL_HOURS", "Type": "int", "Default": 24, "Label": "AI RE-ANALYSIS (HOURS)"},
+
+    # DUAL STRATEGY — combine any two strategies with AND / OR signal logic
+    {"Strategy": "DUAL_STRATEGY", "Category": "STRATEGY", "Key": "STRATEGY_A", "Type": "str", "Default": "EMA_CROSS", "Label": "STRATEGY A"},
+    {"Strategy": "DUAL_STRATEGY", "Category": "STRATEGY", "Key": "STRATEGY_B", "Type": "str", "Default": "ELLIOT_BOLLINGER", "Label": "STRATEGY B"},
+    {"Strategy": "DUAL_STRATEGY", "Category": "STRATEGY", "Key": "CONDITION", "Type": "str", "Default": "AND", "Label": "SIGNAL CONDITION"},
 ]
 
 # GENERATE DYNAMIC DATAFRAME REPRESENTATION
