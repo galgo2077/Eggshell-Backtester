@@ -1,0 +1,19 @@
+# Meta exclusions
+.git/
+.claude/
+
+# Dynamic Python cache systems
+__pycache__/
+*.py[cod]
+.venv/
+venv/
+ENV/
+
+# Active runtime streams
+reports/
+src/binance_service/cache/*.pkl
+
+# Local dev debris
+.DS_Store
+Thumbs.db
+Eggshell-Backtester/
