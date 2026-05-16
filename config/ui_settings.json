@@ -1,8 +1,8 @@
 {
     "strategy-select": "DUAL_STRATEGY",
     "opt_dual_strategy_condition": "AND",
-    "opt_dual_strategy_strategy_a": "ELLIOT_BOLLINGER",
-    "opt_dual_strategy_strategy_b": "ELLIOT_BOLLINGER",
+    "opt_dual_strategy_strategy_a": "EMA_CROSS",
+    "opt_dual_strategy_strategy_b": "SENTIMENT_PROXY",
     "asset-search": "",
     "interval-select": "1h",
     "balance-input": "1000",

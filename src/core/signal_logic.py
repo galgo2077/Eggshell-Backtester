@@ -1,10 +1,9 @@
-from strategies.Ema_cross import EMACrossStrategy
-
 """
 SignalLogic — Modular coordinator for applying indicators and generating signals.
 """
 
 import pandas as pd
+from strategies import STRATEGY_CLASSES, STRATEGY_REGISTRY
 
 
 class SignalLogic:
@@ -38,7 +37,6 @@ class SignalLogic:
         
         strategy_name = self.params.get("STRATEGY", "EMA_CROSS")
         
-        # Partition incoming dataframe by symbol to guarantee technical correctness per-asset
         unique_symbols = self.input_df["symbol"].unique() if "symbol" in self.input_df.columns else [None]
         
         for sym in unique_symbols:
@@ -50,27 +48,16 @@ class SignalLogic:
             if current_df.empty:
                 continue
                 
-            # Initialize Strategy for current partitioned chunk
             if strategy_name == "DUAL_STRATEGY":
                 current_df = self._run_dual(current_df)
-            elif strategy_name == "ELLIOT_BOLLINGER":
-                from strategies.Elliot_bollinger import ElliotBollingerStrategy
-                strategy = ElliotBollingerStrategy(current_df, **self.params)
-                current_df = strategy.apply_indicators()
-                current_df = strategy.generate_signals()
-            elif strategy_name == "SENTIMENT_PROXY":
-                from strategies.Sentiment_proxy import SentimentProxyStrategy
-                strategy = SentimentProxyStrategy(current_df, **self.params)
-                current_df = strategy.apply_indicators()
-                current_df = strategy.generate_signals()
             else:
-                strategy = EMACrossStrategy(current_df, **self.params)
+                strategy_cls = self._get_strategy_class(strategy_name)
+                strategy = strategy_cls(current_df, **self.params)
                 current_df = strategy.apply_indicators()
                 current_df = strategy.generate_signals()
             
             self.processed_dfs.append(current_df)
             
-        # Recombine results maintaining integrity
         if self.processed_dfs:
             self.df = pd.concat(self.processed_dfs).sort_index()
         else:
@@ -78,9 +65,19 @@ class SignalLogic:
             self.df["buy"] = False
             self.df["sell"] = False
         
-        # Build Result Dataframes
         self.indicators = self._build_indicators_df()
         self.signals    = self._build_signals_df()
+
+    def _get_strategy_class(self, name: str):
+        cls = STRATEGY_CLASSES.get(name)
+        if cls is None:
+            for mod in STRATEGY_REGISTRY.values():
+                const = getattr(mod, "constants", None)
+                if const and getattr(const, "STRATEGY_NAME", None) == name:
+                    for attr in vars(mod).values():
+                        if isinstance(attr, type) and attr.__name__.endswith("Strategy"):
+                            return attr
+        return cls
 
     def _run_dual(self, df: pd.DataFrame) -> pd.DataFrame:
         from core.constants import STRATEGY_SCHEMAS
@@ -98,14 +95,11 @@ class SignalLogic:
             return p
 
         def _execute(name: str, source: pd.DataFrame, p: dict) -> pd.DataFrame:
-            if name == "ELLIOT_BOLLINGER":
-                from strategies.Elliot_bollinger import ElliotBollingerStrategy
-                s = ElliotBollingerStrategy(source, **p)
-            elif name == "SENTIMENT_PROXY":
-                from strategies.Sentiment_proxy import SentimentProxyStrategy
-                s = SentimentProxyStrategy(source, **p)
-            else:
-                s = EMACrossStrategy(source, **p)
+            cls = self._get_strategy_class(name)
+            if cls is None:
+                from strategies.Ema_cross import EMACrossStrategy
+                cls = EMACrossStrategy
+            s = cls(source, **p)
             s.apply_indicators()
             return s.generate_signals()
 

@@ -77,10 +77,12 @@ def get_user_preferences():
     actives = available_actives if active_choice == "ALL" else [active_choice]
 
     # Select Strategy
+    from core.constants import STRATEGY_SCHEMAS
+    strategy_choices = [k for k in STRATEGY_SCHEMAS.keys() if k != "DUAL_STRATEGY"]
     strategy_choice = Prompt.ask(
         "Select [bold cyan]Strategy[/bold cyan]",
-        choices=["ELLIOT_BOLLINGER", "EMA_CROSS"],
-        default="ELLIOT_BOLLINGER"
+        choices=strategy_choices,
+        default=strategy_choices[0] if strategy_choices else "EMA_CROSS"
     )
 
     # 2. Select Money
