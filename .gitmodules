@@ -1,3 +1,3 @@
-[submodule "Strategies-eggshell"]
-	path = /home/galgo/Documents/Eggshell-Backtester/src/Strategies-eggshell
+[submodule "src/strategies/Strategies-eggshell"]
+	path = src/strategies/Strategies-eggshell
 	url = https://github.com/galgo2077/Strategies-eggshell.git
