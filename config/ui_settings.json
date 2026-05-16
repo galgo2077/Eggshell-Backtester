@@ -1,13 +1,1 @@
-{
-    "strategy-select": "DUAL_STRATEGY",
-    "opt_dual_strategy_condition": "AND",
-    "opt_dual_strategy_strategy_a": "EMA_CROSS",
-    "opt_dual_strategy_strategy_b": "SENTIMENT_PROXY",
-    "asset-search": "",
-    "interval-select": "1h",
-    "balance-input": "1000",
-    "start-date-input": "2023-01-01",
-    "end-date-input": "",
-    "size-input": "20",
-    "cooldown-input": "0",
-    "asset-chart-select": 
+{"strategy-select": "EMA_CROSS", "opt_dual_strategy_condition": "AND", "opt_dual_strategy_strategy_a": "EMA_CROSS", "opt_dual_strategy_strategy_b": "ELLIOT_BOLLINGER", "asset-search": "", "interval-select": "1h", "balance-input": "1000", "start-date-input": "2023-01-01", "end-date-input": "", "size-input": "50", "cooldown-input": "0", "asset-chart-select": "__ALL__", "assets": ["BTCUSDT"], "opt_ema_cross_enabled_ema": true, "opt_ema_cross_fast_ema": "9", "opt_ema_cross_slow_ema": "21", "opt_ema_cross_enabled_mfi": false, "opt_ema_cross_mfi_length": "14", "opt_ema_cross_buy_level": "30.0", "opt_ema_cross_sell_level": "70.0", "opt_EMA_CROSS_enabled_sell": true}

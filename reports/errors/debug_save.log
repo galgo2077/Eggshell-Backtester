@@ -1,0 +1,100 @@
+[03:04:34] __init__ done
+[03:04:34] on_mount → scheduling _load_ui_settings
+[03:04:35] Input.Changed: size-input=20
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Input.Changed: cooldown-input=0
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Select.Changed: strategy-select=EMA_CROSS
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Select.Changed: opt_dual_strategy_condition=AND
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Select.Changed: opt_dual_strategy_strategy_a=EMA_CROSS
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Select.Changed: opt_dual_strategy_strategy_b=ELLIOT_BOLLINGER
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Input.Changed: start-date-input=2023-01-01
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Input.Changed: balance-input=1000
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Select.Changed: interval-select=1h
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Input.Changed: opt_ema_cross_fast_ema=9
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Input.Changed: opt_ema_cross_slow_ema=21
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Input.Changed: opt_ema_cross_mfi_length=14
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Input.Changed: opt_ema_cross_buy_level=30.0
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] Input.Changed: opt_ema_cross_sell_level=70.0
+[03:04:35] _save SKIPPED (_skip_save=True)
+[03:04:35] _load: read 21 keys from file
+[03:04:35] _load: strategy=EMA_CROSS
+[03:04:35] _load: FAILED to restore asset-chart-select='': Illegal select value ''.
+[03:04:35] _load: restored 27 widgets
+[03:04:35] _load: done
+[03:04:35] Input.Changed: opt_ema_cross_fast_ema=9
+[03:04:35] _save OK → 21 keys written
+[03:04:35] Input.Changed: opt_ema_cross_slow_ema=21
+[03:04:35] _save OK → 21 keys written
+[03:04:35] Input.Changed: opt_ema_cross_mfi_length=14
+[03:04:35] _save OK → 21 keys written
+[03:04:35] Input.Changed: opt_ema_cross_buy_level=30.0
+[03:04:35] _save OK → 21 keys written
+[03:04:35] Input.Changed: opt_ema_cross_sell_level=70.0
+[03:04:35] _save OK → 21 keys written
+[03:04:38] Input.Changed: size-input=2
+[03:04:38] _save OK → 21 keys written
+[03:04:38] Input.Changed: size-input=
+[03:04:38] _save OK → 21 keys written
+[03:04:39] Input.Changed: size-input=5
+[03:04:39] _save OK → 21 keys written
+[03:04:40] Input.Changed: size-input=50
+[03:04:40] _save OK → 21 keys written
+[03:04:44] __init__ done
+[03:04:45] on_mount → scheduling _load_ui_settings
+[03:04:45] Input.Changed: size-input=20
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Input.Changed: cooldown-input=0
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Select.Changed: strategy-select=EMA_CROSS
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Select.Changed: opt_dual_strategy_condition=AND
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Select.Changed: opt_dual_strategy_strategy_a=EMA_CROSS
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Select.Changed: opt_dual_strategy_strategy_b=ELLIOT_BOLLINGER
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Input.Changed: start-date-input=2023-01-01
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Input.Changed: balance-input=1000
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Select.Changed: interval-select=1h
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Input.Changed: opt_ema_cross_fast_ema=9
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Input.Changed: opt_ema_cross_slow_ema=21
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Input.Changed: opt_ema_cross_mfi_length=14
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Input.Changed: opt_ema_cross_buy_level=30.0
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] Input.Changed: opt_ema_cross_sell_level=70.0
+[03:04:45] _save SKIPPED (_skip_save=True)
+[03:04:45] _load: read 21 keys from file
+[03:04:45] _load: strategy=EMA_CROSS
+[03:04:45] _load: FAILED to restore asset-chart-select='': Illegal select value ''.
+[03:04:45] _load: restored 27 widgets
+[03:04:45] _load: done
+[03:04:45] Input.Changed: size-input=50
+[03:04:45] _save OK → 21 keys written
+[03:04:45] Input.Changed: opt_ema_cross_fast_ema=9
+[03:04:45] _save OK → 21 keys written
+[03:04:45] Input.Changed: opt_ema_cross_slow_ema=21
+[03:04:45] _save OK → 21 keys written
+[03:04:45] Input.Changed: opt_ema_cross_mfi_length=14
+[03:04:45] _save OK → 21 keys written
+[03:04:45] Input.Changed: opt_ema_cross_buy_level=30.0
+[03:04:45] _save OK → 21 keys written
+[03:04:45] Input.Changed: opt_ema_cross_sell_level=70.0
+[03:04:45] _save OK → 21 keys written

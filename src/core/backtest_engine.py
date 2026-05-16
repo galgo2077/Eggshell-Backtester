@@ -16,7 +16,7 @@ class BacktestEngine:
                  position_size_pct: float = 100.0, cooldown: int = 0,
                  accumulate: bool = False, per_symbol_alloc: dict | None = None):
         self.df = signals_df.copy()
-        self.initial_balance = initial_balance or BacktestConstants.INITIAL_BALANCE
+        self.initial_balance = initial_balance if initial_balance is not None else BacktestConstants.INITIAL_BALANCE
         self.position_size_pct = position_size_pct
         self.cooldown = cooldown
         self.accumulate = accumulate
@@ -123,7 +123,8 @@ class BacktestEngine:
             worst_trade   = _safe(stats.get('Worst Trade [%]'))
             avg_win       = _safe(stats.get('Avg Winning Trade [%]'))
             avg_loss      = _safe(stats.get('Avg Losing Trade [%]'))
-        except Exception:
+        except Exception as stats_err:
+            self._log_error(f"portfolio.stats() failed: {stats_err}")
             full_stats = {}
             total_ret = max_dd = profit_factor = sharpe = 0.0
             sortino = calmar = recovery = best_trade = worst_trade = 0.0
@@ -197,7 +198,8 @@ class BacktestEngine:
 
         buy_hold = 0.0
         if not close_df.empty:
-            buy_hold = ((close_df.iloc[-1] - close_df.iloc[0]) / close_df.iloc[0]).mean() * 100.0
+            first = close_df.iloc[0].replace(0, np.nan)
+            buy_hold = float(((close_df.iloc[-1] - first) / first).mean() * 100.0) if first.notna().any() else 0.0
 
         charts = self._generate_charts(close_df, formatted_trades, portfolio)
 

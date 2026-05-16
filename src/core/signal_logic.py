@@ -52,6 +52,8 @@ class SignalLogic:
                 current_df = self._run_dual(current_df)
             else:
                 strategy_cls = self._get_strategy_class(strategy_name)
+                if strategy_cls is None:
+                    raise ValueError(f"Unknown strategy: '{strategy_name}'. Check STRATEGY_CLASSES registry.")
                 strategy = strategy_cls(current_df, **self.params)
                 current_df = strategy.apply_indicators()
                 current_df = strategy.generate_signals()

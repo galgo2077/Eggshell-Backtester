@@ -37,7 +37,8 @@ def _discover():
                     if isinstance(attr, type) and attr.__name__.endswith("Strategy"):
                         STRATEGY_CLASSES[strategy_name] = attr
                         break
-            except Exception:
-                pass
+            except Exception as e:
+                import sys as _sys
+                print(f"[strategies] Failed to load '{entry}': {e}", file=_sys.stderr)
 
 _discover()
