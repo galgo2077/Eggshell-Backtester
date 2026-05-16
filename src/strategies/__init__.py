@@ -9,7 +9,9 @@ if submodule_path not in sys.path:
 # Import the actual packages from the submodule
 import Elliot_bollinger
 import Ema_cross
+import Sentiment_proxy
 
 # Expose them as if they were submodules of the `strategies` package
 sys.modules['strategies.Elliot_bollinger'] = Elliot_bollinger
-sys.modules['strategies.Ema_cross'] = Ema_cross
+sys.modules['strategies.Ema_cross']        = Ema_cross
+sys.modules['strategies.Sentiment_proxy']  = Sentiment_proxy
