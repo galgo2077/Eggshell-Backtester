@@ -1,3 +1,0 @@
-"""
-Antigravity Systems — Strategies Package
-"""
