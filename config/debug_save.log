@@ -1,0 +1,50 @@
+[09:31:17] __init__ done
+[09:31:17] on_mount → scheduling _load_ui_settings
+[09:31:18] Input.Changed: size-input=20
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Input.Changed: cooldown-input=0
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Select.Changed: strategy-select=EMA_CROSS
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Select.Changed: opt_dual_strategy_condition=AND
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Select.Changed: opt_dual_strategy_strategy_a=EMA_CROSS
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Select.Changed: opt_dual_strategy_strategy_b=ELLIOT_BOLLINGER
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Input.Changed: start-date-input=2023-01-01
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Input.Changed: balance-input=1000
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Select.Changed: interval-select=1h
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Input.Changed: opt_ema_cross_fast_ema=9
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Input.Changed: opt_ema_cross_slow_ema=21
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Input.Changed: opt_ema_cross_mfi_length=14
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Input.Changed: opt_ema_cross_buy_level=30.0
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] Input.Changed: opt_ema_cross_sell_level=70.0
+[09:31:18] _save SKIPPED (_skip_save=True)
+[09:31:18] _load: read 21 keys from file
+[09:31:18] _load: strategy=EMA_CROSS
+[09:31:18] _load: FAILED to restore asset-chart-select='': Illegal select value ''.
+[09:31:18] _load: restored 27 widgets
+[09:31:18] _load: done
+[09:31:18] Input.Changed: size-input=50
+[09:31:18] _save OK → 21 keys written
+[09:31:18] Input.Changed: opt_ema_cross_fast_ema=9
+[09:31:18] _save OK → 21 keys written
+[09:31:18] Input.Changed: opt_ema_cross_slow_ema=21
+[09:31:18] _save OK → 21 keys written
+[09:31:18] Input.Changed: opt_ema_cross_mfi_length=14
+[09:31:18] _save OK → 21 keys written
+[09:31:18] Input.Changed: opt_ema_cross_buy_level=30.0
+[09:31:18] _save OK → 21 keys written
+[09:31:18] Input.Changed: opt_ema_cross_sell_level=70.0
+[09:31:18] _save OK → 21 keys written
+[09:31:20] _save OK → 21 keys written
+[09:31:59] Select.Changed: asset-chart-select=__ALL__
+[09:31:59] _save OK → 21 keys written

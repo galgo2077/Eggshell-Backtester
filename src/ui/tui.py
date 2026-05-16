@@ -476,8 +476,12 @@ class BacktestApp(App):
         super().__init__(**kwargs)
         self.sort_states = {}
         self._active_settings = {}
-        self._loading_settings = False
+        self._loading = False
+        self._skip_save = True
         self._dual_active_slot = "a"
+        self._status_reset_timer = None
+        self._debug_path = os.path.join(os.path.dirname(self.SETTINGS_FILE), "debug_save.log")
+        self._debug("__init__ done")
 
     def rebuild_strategy_and_risk_tabs(self, strategy_name: str) -> None:
         schema = STRATEGY_SCHEMAS.get(strategy_name, STRATEGY_SCHEMAS["EMA_CROSS"])
@@ -620,7 +624,6 @@ class BacktestApp(App):
                 return
         except Exception:
             return
-        self._save_ui_settings()
         self.rebuild_strategy_and_risk_tabs("DUAL_STRATEGY")
 
     @on(Select.Changed, "#opt_dual_strategy_strategy_b")
@@ -632,13 +635,11 @@ class BacktestApp(App):
                 return
         except Exception:
             return
-        self._save_ui_settings()
         self.rebuild_strategy_and_risk_tabs("DUAL_STRATEGY")
 
     @on(Select.Changed, "#strategy-select")
     def on_strategy_changed(self, event: Select.Changed) -> None:
         if event.value:
-            self._save_ui_settings()
             self.rebuild_strategy_and_risk_tabs(event.value)
             try:
                 dual_panel = self.query_one("#dual-strategy-panel")
@@ -649,80 +650,123 @@ class BacktestApp(App):
             except Exception:
                 pass
 
-    def on_mount(self) -> None:
-        self.title = "EGGSHELL BACKTESTER v1.1"
-        # Delay loading until compose is finished so widgets exist
-        self.call_after_refresh(self._load_ui_settings)
-
-    def _save_ui_settings(self) -> None:
-        """UNIFIED UNIVERSAL SAVER: Directly mirrors the visual DOM into persistent state."""
+    def _debug(self, msg: str) -> None:
         try:
-            # 1. Seed with existing cache to preserve unmounted widget states
-            settings = dict(getattr(self, "_active_settings", {}))
-
-            # 2. Automatically reflect EVERY ACTIVE WIDGET in the app directly by ID!
-            for widget in self.query("Input, Select, Switch"):
-                if widget.id:
-                    # Map generic ID from component directly to memory key
-                    settings[widget.id] = widget.value
-
-            # 3. Handle special multi-select checkboxes
-            settings["assets"] = [str(cb.label) for cb in self.query("#asset-checkbox-container Checkbox") if cb.value]
-
-            # 4. Immediate synchronization to system RAM cache!
-            self._active_settings = settings
-
-            # 5. Write final snapshot to physical disk
-            with open(self.SETTINGS_FILE, "w") as f:
-                json.dump(settings, f, indent=4)
+            with open(self._debug_path, "a") as f:
+                import time as _t
+                f.write(f"[{_t.strftime('%H:%M:%S')}] {msg}\n")
         except Exception:
             pass
 
-    def _load_ui_settings(self) -> None:
-        """UNIFIED UNIVERSAL LOADER: Hydrates existing interface dynamically from dataset."""
-        # Establish startup base state
-        default_strat = list(STRATEGY_SCHEMAS.keys())[0] if STRATEGY_SCHEMAS else None
-        
+    def on_mount(self) -> None:
+        self.title = "EGGSHELL BACKTESTER v1.1"
+        self._debug("on_mount → scheduling _load_ui_settings")
+        self.call_after_refresh(self._load_ui_settings)
+
+    # ── AUTO-SAVE + PERSIST ────────────────────────────────────────────────
+
+    def _save(self):
+        if self._loading:
+            self._debug("_save SKIPPED (_loading=True)")
+            return
+        if self._skip_save:
+            self._debug("_save SKIPPED (_skip_save=True)")
+            return
+        try:
+            data = dict(self._active_settings)
+            for w in self.query("Input, Select, Switch"):
+                if w.id:
+                    v = w.value
+                    if v.__class__.__name__ == "NoSelection":
+                        v = ""
+                    data[w.id] = v
+            data["assets"] = [
+                str(cb.label) for cb in self.query("#asset-checkbox-container Checkbox") if cb.value
+            ]
+            self._active_settings = data
+            tmp = self.SETTINGS_FILE + ".tmp"
+            with open(tmp, "w") as f:
+                json.dump(data, f)
+            os.replace(tmp, self.SETTINGS_FILE)
+            self._debug(f"_save OK → {len(data)} keys written")
+        except Exception as e:
+            self._debug(f"_save EXCEPTION: {e}")
+        self._saved_feedback()
+
+    def _saved_feedback(self):
+        try:
+            lbl = self.query_one("#status-label", Label)
+            lbl.update("✓ SAVED")
+            if self._status_reset_timer:
+                self._status_reset_timer.stop()
+            self._status_reset_timer = self.set_timer(2.0, lambda: lbl.update("SYSTEM IDLE"))
+        except Exception:
+            pass
+
+    @on(Input.Changed)
+    def _on_input_changed(self, event):
+        self._debug(f"Input.Changed: {event.input.id}={event.value}")
+        self._save()
+
+    @on(Switch.Changed)
+    def _on_switch_changed(self, event):
+        self._debug(f"Switch.Changed: {event.switch.id}={event.value}")
+        self._save()
+
+    @on(Select.Changed)
+    def _on_select_changed(self, event):
+        self._debug(f"Select.Changed: {event.select.id}={event.value}")
+        self._save()
+
+    def _load_ui_settings(self):
+        default = list(STRATEGY_SCHEMAS.keys())[0] if STRATEGY_SCHEMAS else None
         if not os.path.exists(self.SETTINGS_FILE):
-            self.rebuild_strategy_and_risk_tabs(default_strat)
+            self._debug("_load: no file → rebuild with defaults")
+            self.rebuild_strategy_and_risk_tabs(default)
+            self._skip_save = False
             return
 
+        self._loading = True
+        loaded = {}
         try:
-            with open(self.SETTINGS_FILE, "r") as f:
+            with open(self.SETTINGS_FILE) as f:
                 loaded = json.load(f)
-            
-            # Pre-seed memory cache
-            self._active_settings = loaded
+            self._active_settings.update(loaded)
+            self._debug(f"_load: read {len(loaded)} keys from file")
+        except Exception as e:
+            self._debug(f"_load: json load failed: {e}")
 
-            # 1. Perform universal DOM hydration for root components
-            for widget in self.query("Input, Select, Switch"):
-                if widget.id and widget.id in loaded:
-                    try:
-                        widget.value = loaded[widget.id]
-                    except Exception: pass
-
-            # 2. Trigger strategy-specific sub-DOM reconstruction
-            strat_to_load = loaded.get("strategy-select", default_strat)
-            self.rebuild_strategy_and_risk_tabs(strat_to_load)
+        try:
+            strat = loaded.get("strategy-select", default)
+            self._debug(f"_load: strategy={strat}")
+            self.rebuild_strategy_and_risk_tabs(strat)
             try:
-                dual_panel = self.query_one("#dual-strategy-panel")
-                if strat_to_load == "DUAL_STRATEGY":
-                    dual_panel.remove_class("hidden")
-                else:
-                    dual_panel.add_class("hidden")
+                dp = self.query_one("#dual-strategy-panel")
+                (dp.remove_class if strat == "DUAL_STRATEGY" else dp.add_class)("hidden")
             except Exception:
                 pass
 
-            # 3. Automatically restore checkboxes
-            self._loading_settings = True
-            saved_assets = set(loaded.get("assets", ["BTCUSDT"]))
+            self._skip_save = True
+            restored_count = 0
+            for w in self.query("Input, Select, Switch"):
+                if w.id and w.id in loaded:
+                    try:
+                        w.value = loaded[w.id]
+                        restored_count += 1
+                    except Exception as e:
+                        self._debug(f"_load: FAILED to restore {w.id}={loaded[w.id]!r}: {e}")
+            self._debug(f"_load: restored {restored_count} widgets")
+
+            saved = set(loaded.get("assets", ["BTCUSDT"]))
             for cb in self.query("#asset-checkbox-container Checkbox"):
-                cb.value = str(cb.label) in saved_assets
-            self._loading_settings = False
-            # 4. Rebuild allocation with saved values (must happen after checkboxes restored)
+                cb.value = str(cb.label) in saved
             self._rebuild_allocation_inputs(reset=False)
-        except Exception:
-            pass
+            self._debug("_load: done")
+        except Exception as e:
+            self._debug(f"_load: outer exception: {e}")
+        finally:
+            self._loading = False
+            self._skip_save = False
 
     def compose(self) -> ComposeResult:
         # Rebranded Logo
@@ -1076,7 +1120,7 @@ class BacktestApp(App):
 
     @on(Button.Pressed, "#run-btn")
     def on_run_pressed(self) -> None:
-        self._save_ui_settings() # Save settings whenever we run a backtest
+        self._save()
         self.action_run()
 
 
@@ -1418,9 +1462,10 @@ class BacktestApp(App):
 
     @on(Checkbox.Changed, ".asset-checkbox")
     def on_asset_toggled(self, event: Checkbox.Changed) -> None:
-        if not self._loading_settings:
+        if not self._loading:
             self._rebuild_allocation_inputs(reset=True)
             self._refresh_pie_live()
+            self._save()
 
     def on_button_pressed(self, event: Button.Pressed) -> None:
         if event.button.id == "cancel-btn":
