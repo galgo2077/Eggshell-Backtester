@@ -480,6 +480,7 @@ class BacktestApp(App):
         self._skip_save = True
         self._dual_active_slot = "a"
         self._status_reset_timer = None
+        self._run_final_status = None
         self._debug_path = os.path.join(os.path.dirname(self.SETTINGS_FILE), "debug_save.log")
         self._debug("__init__ done")
 
@@ -699,7 +700,7 @@ class BacktestApp(App):
             lbl.update("✓ SAVED")
             if self._status_reset_timer:
                 self._status_reset_timer.stop()
-            self._status_reset_timer = self.set_timer(2.0, lambda: lbl.update("SYSTEM IDLE"))
+            self._status_reset_timer = self.set_timer(2.0, lambda: lbl.update("READY"))
         except Exception:
             pass
 
@@ -870,7 +871,7 @@ class BacktestApp(App):
                                 yield Vertical(id="dynamic-risk-container")
 
                 with Vertical(id="config-footer"):
-                    yield Label("SYSTEM IDLE", id="status-label")
+                    yield Label("READY", id="status-label")
                     yield ProgressBar(id="main-progress", total=100, show_eta=True)
                     with Horizontal(id="btn-row"):
                         yield Button("EXECUTE SEQUENCE (R)", id="run-btn", variant="primary")
@@ -1708,48 +1709,54 @@ class BacktestApp(App):
         log.write(f"[[dim]{time_str}[/dim]] [[b {color}]{level.upper()}[/b {color}]] {msg}")
 
     def _run_backtest(self, assets, interval, balance, size, start_date, end_date, adv_params, cooldown, accumulate, per_symbol_alloc=None) -> None:
-        # ── UI helpers (run on main thread, release GIL so asyncio can render) ─
+        _t0 = time.time()
+        _pct = [0.0]
+
+        def _elapsed() -> str:
+            s = time.time() - _t0
+            return f"{int(s // 60):02d}:{s % 60:04.1f}s"
+
         def _prog(v: float):
+            _pct[0] = v
             self.app.call_from_thread(
                 lambda _v=v: self.query_one("#main-progress", ProgressBar).update(progress=_v)
             )
 
-        def _status(msg: str):
-            self.app.call_from_thread(
-                lambda m=msg: self.query_one("#status-label", Label).update(m)
-            )
-
         def _log(msg: str, level: str = "info", pause: float = 0.04):
-            """Write to log + update status bar, then sleep so Textual renders it."""
+            p = int(_pct[0])
+            status_text = f"{p}% — {msg}"
             self.app.call_from_thread(lambda m=msg, l=level: self.log_status(m, l))
-            self.app.call_from_thread(lambda m=msg: self.query_one("#status-label", Label).update(m))
-            time.sleep(pause)   # release GIL → asyncio loop cycles → widget renders
+            self.app.call_from_thread(lambda s=status_text: self.query_one("#status-label", Label).update(s))
+            time.sleep(pause)
 
         try:
-            # ── Step 1: Data Download  (10 → 40%) ─────────────────────────────
-            _prog(10)
-            _log(f"FETCHING DATA: {len(assets)} ASSET(S) @ {interval} | {start_date} → {end_date or 'NOW'}", pause=0.05)
+            strategy_name = adv_params.get("STRATEGY", "EMA_CROSS")
+
+            # ── Step 1/3: Data Download (0 → 40%) ─────────────────────────────
+            _prog(2);  _log(f"[1/3] INITIATING — {len(assets)} ASSET(S) / {interval} / {strategy_name}", pause=0.05)
+            _prog(5);  _log(f"[1/3] CONNECTING TO BINANCE — {start_date} → {end_date or 'NOW'}", pause=0.05)
             if self.cancelled: return
+            _prog(8);  _log(f"[1/3] CHECKING LOCAL CACHE...", pause=0.04)
+            _prog(10); _log(f"[1/3] DOWNLOADING — {', '.join(assets)}", pause=0.04)
 
             def on_data_progress(pct: float, msg: str = None):
                 if self.cancelled: return
                 _prog(10 + pct * 30)
                 if msg:
-                    _log(msg, pause=0.04)   # sleep here too — called from pool thread
+                    _log(f"[1/3] {msg}", pause=0.02)
 
             binance_df = Dataframe(
                 actives=assets, interval=interval,
                 start_date=start_date, end_date=end_date,
                 on_progress=on_data_progress,
             )
-
-            total_candles = len(binance_df.df)
-            _prog(40)
-            _log(f"DATA READY: {total_candles:,} CANDLES ACROSS {len(assets)} ASSET(S)", "success", pause=0.06)
             if self.cancelled: return
 
-            # ── Step 2: Signal Calculation  (40 → 70%) ────────────────────────
-            _log("COMPUTING TECHNICAL INDICATORS...", pause=0.04)
+            total_candles = len(binance_df.df)
+            _prog(40); _log(f"[1/3] DATA READY — {total_candles:,} CANDLES / {len(assets)} PAIR(S) — {_elapsed()}", "success", pause=0.06)
+
+            # ── Step 2/3: Signal Calculation (40 → 70%) ───────────────────────
+            _prog(42); _log(f"[2/3] COMPUTING INDICATORS — {strategy_name}", pause=0.04)
 
             all_signals = []
             num_assets  = max(len(assets), 1)
@@ -1758,18 +1765,18 @@ class BacktestApp(App):
                 if self.cancelled: return
                 symbol_df = binance_df.df[binance_df.df["symbol"] == symbol]
                 if symbol_df.empty:
-                    _log(f"NO DATA FOR {symbol} — SKIPPED", "warning", pause=0.04)
+                    _log(f"[2/3] NO DATA FOR {symbol} — SKIPPED", "warning", pause=0.04)
                     continue
 
-                base_pct = 40 + (asset_idx / num_assets) * 30
+                base_pct = 44 + (asset_idx / num_assets) * 24
                 _prog(base_pct)
-                _log(f"SIGNALS [{asset_idx + 1}/{num_assets}]: {symbol}  ({len(symbol_df):,} candles)", pause=0.04)
+                _log(f"[2/3] SIGNALS [{asset_idx + 1}/{num_assets}] — {symbol} ({len(symbol_df):,} candles)", pause=0.04)
 
                 def on_sub_progress(pct: float, msg: str = None, _idx=asset_idx):
                     if self.cancelled: return
-                    _prog(40 + (_idx / num_assets) * 30 + (30.0 / num_assets) * pct)
+                    _prog(44 + (_idx / num_assets) * 24 + (24.0 / num_assets) * pct)
                     if msg:
-                        _log(msg, pause=0.03)
+                        _log(f"[2/3] {msg}", pause=0.02)
 
                 sl = SignalLogic(symbol_df, on_progress=on_sub_progress, **adv_params)
                 all_signals.append(sl.df)
@@ -1780,12 +1787,14 @@ class BacktestApp(App):
                 return
 
             unified_signals = pd.concat(all_signals)
-            _prog(70)
-            _log("ALL SIGNALS COMPUTED — STARTING ENGINE...", "success", pause=0.06)
+            total_buys  = int(unified_signals["buy"].sum())  if "buy"  in unified_signals.columns else 0
+            total_sells = int(unified_signals["sell"].sum()) if "sell" in unified_signals.columns else 0
+            _prog(70); _log(f"[2/3] SIGNALS READY — {total_buys} BUY / {total_sells} SELL — {_elapsed()}", "success", pause=0.06)
             if self.cancelled: return
 
-            # ── Step 3: Engine Simulation  (70 → 100%) ────────────────────────
-            _log("INITIALIZING VECTORBT PORTFOLIO ENGINE...", pause=0.04)
+            # ── Step 3/3: Engine Simulation (70 → 100%) ───────────────────────
+            _prog(72); _log(f"[3/3] INITIALIZING VECTORBT ENGINE...", pause=0.05)
+            _prog(74); _log(f"[3/3] BALANCE ${balance:,.2f} | SIZE {size:.1f}% | COOLDOWN {cooldown} CANDLES", pause=0.05)
 
             engine = BacktestEngine(
                 unified_signals, initial_balance=balance, position_size_pct=size,
@@ -1794,24 +1803,26 @@ class BacktestApp(App):
 
             def on_engine_progress(pct: float, msg: str = None):
                 if self.cancelled: return
-                _prog(70 + pct * 30)
+                _prog(76 + pct * 24)
                 if msg:
-                    _log(msg, pause=0.04)
+                    _log(f"[3/3] {msg}", pause=0.03)
 
             results = engine.run(on_progress=on_engine_progress)
             if self.cancelled: return
 
+            elapsed_total = time.time() - _t0
+            trades_n = len(engine.trades)
+            roi = results.get("total_return_pct", 0.0)
             _prog(100)
-            _log(f"SIMULATION COMPLETE — {len(engine.trades)} TRADES EXECUTED", "success", pause=0.06)
-            self.app.call_from_thread(
-                lambda: self.query_one("#status-label", Label).update("[bold green]BACKTEST COMPLETE[/bold green]")
-            )
+            _log(f"[3/3] BACKTEST COMPLETE — {trades_n} TRADES | ROI {roi:+.2f}% | {elapsed_total:.1f}s", "success", pause=0.06)
+            self._run_final_status = f"[bold green]DONE — {trades_n} TRADES | ROI {roi:+.2f}% | {elapsed_total:.1f}s[/bold green]"
             self.app.call_from_thread(self._update_results, results, engine.trades)
 
         except Exception as e:
             import traceback
             import os
             self.app.call_from_thread(lambda: self.log_status(f"CRITICAL ERROR: {e}", "error"))
+            self._run_final_status = f"[bold red]ERROR — {e}[/bold red]"
             proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
             err_dir   = os.path.join(proj_root, "reports", "errors")
             os.makedirs(err_dir, exist_ok=True)
@@ -1828,7 +1839,9 @@ class BacktestApp(App):
         run_btn.label = "EXECUTE SEQUENCE (R)"
         can_btn.remove_class("visible")
         self.query_one("#main-progress", ProgressBar).remove_class("visible")
-        self.query_one("#status-label", Label).update("SYSTEM IDLE")
+        final = getattr(self, "_run_final_status", None)
+        self.query_one("#status-label", Label).update(final if final else "READY")
+        self._run_final_status = None
 
     @staticmethod
     def _fill_bar(value: float, scale: float, width: int = 20) -> str:

@@ -48,3 +48,103 @@
 [09:31:20] _save OK → 21 keys written
 [09:31:59] Select.Changed: asset-chart-select=__ALL__
 [09:31:59] _save OK → 21 keys written
+[09:39:12] __init__ done
+[09:39:12] on_mount → scheduling _load_ui_settings
+[09:39:12] Input.Changed: size-input=20
+[09:39:12] _save SKIPPED (_skip_save=True)
+[09:39:12] Input.Changed: cooldown-input=0
+[09:39:12] _save SKIPPED (_skip_save=True)
+[09:39:12] Select.Changed: strategy-select=EMA_CROSS
+[09:39:12] _save SKIPPED (_skip_save=True)
+[09:39:12] Select.Changed: opt_dual_strategy_condition=AND
+[09:39:12] _save SKIPPED (_skip_save=True)
+[09:39:12] Select.Changed: opt_dual_strategy_strategy_a=EMA_CROSS
+[09:39:12] _save SKIPPED (_skip_save=True)
+[09:39:12] Select.Changed: opt_dual_strategy_strategy_b=ELLIOT_BOLLINGER
+[09:39:12] _save SKIPPED (_skip_save=True)
+[09:39:12] Input.Changed: start-date-input=2023-01-01
+[09:39:12] _save SKIPPED (_skip_save=True)
+[09:39:12] Input.Changed: balance-input=1000
+[09:39:12] _save SKIPPED (_skip_save=True)
+[09:39:12] Select.Changed: interval-select=1h
+[09:39:12] _save SKIPPED (_skip_save=True)
+[09:39:13] Input.Changed: opt_ema_cross_fast_ema=9
+[09:39:13] _save SKIPPED (_skip_save=True)
+[09:39:13] Input.Changed: opt_ema_cross_slow_ema=21
+[09:39:13] _save SKIPPED (_skip_save=True)
+[09:39:13] Input.Changed: opt_ema_cross_mfi_length=14
+[09:39:13] _save SKIPPED (_skip_save=True)
+[09:39:13] Input.Changed: opt_ema_cross_buy_level=30.0
+[09:39:13] _save SKIPPED (_skip_save=True)
+[09:39:13] Input.Changed: opt_ema_cross_sell_level=70.0
+[09:39:13] _save SKIPPED (_skip_save=True)
+[09:39:13] _load: read 21 keys from file
+[09:39:13] _load: strategy=EMA_CROSS
+[09:39:13] _load: FAILED to restore asset-chart-select='__ALL__': Illegal select value '__ALL__'.
+[09:39:13] _load: restored 27 widgets
+[09:39:13] _load: done
+[09:39:13] Input.Changed: size-input=50
+[09:39:13] _save OK → 21 keys written
+[09:39:13] Input.Changed: opt_ema_cross_fast_ema=9
+[09:39:13] _save OK → 21 keys written
+[09:39:13] Input.Changed: opt_ema_cross_slow_ema=21
+[09:39:13] _save OK → 21 keys written
+[09:39:13] Input.Changed: opt_ema_cross_mfi_length=14
+[09:39:13] _save OK → 21 keys written
+[09:39:13] Input.Changed: opt_ema_cross_buy_level=30.0
+[09:39:13] _save OK → 21 keys written
+[09:39:13] Input.Changed: opt_ema_cross_sell_level=70.0
+[09:39:13] _save OK → 21 keys written
+[09:39:18] _save OK → 21 keys written
+[09:39:43] Select.Changed: asset-chart-select=__ALL__
+[09:39:43] _save OK → 21 keys written
+[09:46:06] __init__ done
+[09:46:06] on_mount → scheduling _load_ui_settings
+[09:46:06] Input.Changed: size-input=20
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Input.Changed: cooldown-input=0
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Select.Changed: strategy-select=EMA_CROSS
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Select.Changed: opt_dual_strategy_condition=AND
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Select.Changed: opt_dual_strategy_strategy_a=EMA_CROSS
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Select.Changed: opt_dual_strategy_strategy_b=ELLIOT_BOLLINGER
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Input.Changed: start-date-input=2023-01-01
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Input.Changed: balance-input=1000
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Select.Changed: interval-select=1h
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Input.Changed: opt_ema_cross_fast_ema=9
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Input.Changed: opt_ema_cross_slow_ema=21
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Input.Changed: opt_ema_cross_mfi_length=14
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Input.Changed: opt_ema_cross_buy_level=30.0
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] Input.Changed: opt_ema_cross_sell_level=70.0
+[09:46:06] _save SKIPPED (_skip_save=True)
+[09:46:06] _load: read 21 keys from file
+[09:46:06] _load: strategy=EMA_CROSS
+[09:46:06] _load: FAILED to restore asset-chart-select='__ALL__': Illegal select value '__ALL__'.
+[09:46:06] _load: restored 27 widgets
+[09:46:06] _load: done
+[09:46:06] Input.Changed: size-input=50
+[09:46:06] _save OK → 21 keys written
+[09:46:06] Input.Changed: opt_ema_cross_fast_ema=9
+[09:46:06] _save OK → 21 keys written
+[09:46:06] Input.Changed: opt_ema_cross_slow_ema=21
+[09:46:06] _save OK → 21 keys written
+[09:46:06] Input.Changed: opt_ema_cross_mfi_length=14
+[09:46:06] _save OK → 21 keys written
+[09:46:06] Input.Changed: opt_ema_cross_buy_level=30.0
+[09:46:06] _save OK → 21 keys written
+[09:46:06] Input.Changed: opt_ema_cross_sell_level=70.0
+[09:46:06] _save OK → 21 keys written
+[09:46:13] _save OK → 21 keys written
+[09:46:41] Select.Changed: asset-chart-select=__ALL__
+[09:46:41] _save OK → 21 keys written
