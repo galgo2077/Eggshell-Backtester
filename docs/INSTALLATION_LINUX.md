@@ -1,60 +1,68 @@
-# 🐧 Linux Installation Guide: Eggshell Backtester
+# Linux Installation — Eggshell Backtester
 
-This guide will help you set up the **Eggshell Backtester** on Linux.
+## Option A · Docker (Recommended)
 
----
+Includes Ollama AI, n8n automation, and reports server pre-configured.
 
-## 📋 Prerequisites
-- **Python 3.10 or higher**
-- A terminal (Bash, Zsh, etc.)
+### Prerequisites
+- Docker Engine installed and running
 
----
+### 1. Authenticate to GitHub Container Registry
+```bash
+echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+PAT needs `read:packages` scope.
 
-## 🛠️ Step-by-Step Setup
+### 2. Pull and run
+```bash
+docker pull ghcr.io/galgo2077/eggshell:latest
 
-1. **Navigate to the project folder**:
-   ```bash
-   cd "Stategies testing"
-   ```
+docker run -it --rm \
+  -e BINANCE_API_KEY=your_key \
+  -e BINANCE_API_SECRET=your_secret \
+  -p 5678:5678 \
+  -p 8080:8080 \
+  --privileged \
+  ghcr.io/galgo2077/eggshell:latest
+```
 
-2. **Create a virtual environment**:
-   ```bash
-   python3 -m venv venv
-   ```
+### 3. Launch backtester inside container
+```bash
+eggshell
+```
 
-3. **Activate the environment**:
-   ```bash
-   source venv/bin/activate
-   ```
-
-4. **Install dependencies**:
-   ```bash
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-
-5. **(Optional) Configure API Keys**:
-   Create a `.env` file in the root directory:
-   ```bash
-   # For Binance data (default)
-   echo "BINANCE_API_KEY=your_key_here" > .env
-   echo "BINANCE_API_SECRET=your_secret_here" >> .env
-   ```
-
-6. **Launch the Application**:
-   ```bash
-   python Elliot/main.py
-   ```
+Services started automatically by systemd:
+| Service | URL |
+|---|---|
+| Ollama AI | `http://localhost:11434` |
+| n8n workflows | `http://localhost:5678` |
+| Reports browser | `http://localhost:8080` |
 
 ---
 
-## 🚀 Running Modes
+## Option B · Local Python
 
-- **TUI Mode (Default)**: Launches the interactive dashboard.
-  ```bash
-  python Elliot/main.py
-  ```
-- **CLI Mode**: Runs a quick backtest in the terminal with prompts.
-  ```bash
-  python Elliot/main.py --cli
-  ```
+### Prerequisites
+- Python 3.10+
+- Terminal (Bash/Zsh)
+
+### Setup
+```bash
+git clone --recurse-submodules https://github.com/galgo2077/Eggshell-Backtester.git
+cd Eggshell-Backtester
+python3 -m venv venv
+source venv/bin/activate
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Configure API keys (optional)
+```bash
+echo "BINANCE_API_KEY=your_key_here" > .env
+echo "BINANCE_API_SECRET=your_secret_here" >> .env
+```
+
+### Launch
+```bash
+python src/main.py
+```

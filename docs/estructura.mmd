@@ -1,6 +1,6 @@
 %% Eggshell Backtester — Module Dependency Map
 %% Render at https://mermaid.live or open reports/estructura.html
-%% Last updated: 2026-05-10
+%% Last updated: 2026-05-17
 
 flowchart TD
 
@@ -17,7 +17,7 @@ flowchart TD
   subgraph CORE["Core Engine"]
     SL["core/signal_logic.py · SignalLogic · on_progress callback"]
     BE["core/backtest_engine.py · BacktestEngine · on_progress(pct, msg)"]
-    CONST["core/constants.py · STRATEGY_SCHEMAS / ConnectConstants"]
+    CONST["core/constants.py · CONFIG_REGISTRY (auto-built from STRATEGY_REGISTRY)"]
   end
 
   subgraph DATA["Binance Data Layer"]
@@ -26,11 +26,18 @@ flowchart TD
     CONN["binance_service/connect.py · Connect"]
   end
 
-  subgraph STRAT["Strategies"]
+  subgraph STRAT["strategies/ (local)"]
+    REGISTRY["strategies/__init__.py · STRATEGY_REGISTRY auto-discover"]
+    DUAL["DUAL_STRATEGY · combines two strategies with AND / OR signal logic"]
+    EMAS["Ema_cross/strategy.py · EMACrossStrategy"]
+    EMAC["Ema_cross/constants.py"]
+  end
+
+  subgraph SUBREPO["strategies/Strategies-eggshell (git submodule)"]
     EBS["Elliot_bollinger/strategy.py · ElliotBollingerStrategy"]
     EBC["Elliot_bollinger/constants.py"]
-    EMAS["Ema_cross/strategy.py · EMACrossStrategy · on_progress steps"]
-    EMAC["Ema_cross/constants.py"]
+    SENT["Sentiment_proxy/strategy.py · SentimentProxyStrategy"]
+    SENTC["Sentiment_proxy/constants.py"]
   end
 
   subgraph EXT["Third-party"]
@@ -38,8 +45,16 @@ flowchart TD
     TEXTUAL["textual"]
     RICH["rich"]
     PLOTLY["plotly"]
+    PANDASTA["pandas-ta-classic · indicators"]
     BAPI["python-binance"]
-    OLLAMA["ollama (localhost:11434)"]
+    OLLAMA["ollama · localhost:11434 · qwen2.5:0.5b + 0xroyce/plutus:latest"]
+    N8N["n8n · localhost:5678 · webhook automation"]
+  end
+
+  subgraph DOCKER["Docker Image / Runtime (systemd PID 1)"]
+    OLLAMASVC["ollama.service · AI engine"]
+    N8NSVC["n8n.service · workflow automation · :5678"]
+    REPSVC["reports-server.service · python http.server :8080 → /app/reports"]
   end
 
   subgraph REPORTS["reports/  (git-ignored content, dirs tracked via .gitkeep)"]
@@ -68,15 +83,20 @@ flowchart TD
   RRESULTS --> RSTATS & RTRADES & RJSON & RCOPY & RLINKS
   LOAD --> RRESULTS
   PIE  --> ALLOC
-  SL   --> EMAS & EBS
-  BE   --> CONST & VBT & PLOTLY
+  SL   --> REGISTRY
+  REGISTRY --> EMAS & EBS & SENT & DUAL
+  CONST --> REGISTRY
+  BE   --> CONST & VBT & PLOTLY & PANDASTA
   BE   --> RCHARTS & RERR
   DF   --> CACHE & CONN
   CONN --> BAPI
-  CONST --> EBC & EMAC
   EBS  --> EBC & OLLAMA
+  SENT --> SENTC & N8N
   EMAS --> EMAC
   MAIN --> RICH
+  OLLAMASVC --> OLLAMA
+  N8NSVC --> N8N
+  REPSVC --> RCHARTS
   CACHE -.gitignore.-> IGN1
   RCHARTS -.gitignore.-> IGN2
   RERR -.gitignore.-> IGN3

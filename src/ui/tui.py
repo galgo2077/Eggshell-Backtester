@@ -4,6 +4,7 @@ from core.backtest_engine import BacktestEngine
 from core.constants import DataframeConstantsBinance, STRATEGY_SCHEMAS
 
 import os
+import socket
 import calendar
 import webbrowser
 from datetime import datetime, date
@@ -22,6 +23,28 @@ from threading import Thread
 import pandas as pd
 
 import inspect
+
+_REPORTS_ROOT = os.path.join(
+    os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))),
+    "reports"
+)
+_CHART_PORT = 8080
+
+def _server_ip() -> str:
+    host = os.environ.get("EGGSHELL_HOST")
+    if host:
+        return host
+    try:
+        with socket.socket(socket.AF_INET, socket.SOCK_DGRAM) as s:
+            s.connect(("8.8.8.8", 80))
+            return s.getsockname()[0]
+    except Exception:
+        return "SERVER_IP"
+
+def _chart_url(file_path: str, anchor: str = "") -> str:
+    rel = os.path.relpath(file_path, _REPORTS_ROOT).replace(os.sep, "/")
+    url = f"http://{_server_ip()}:{_CHART_PORT}/{rel}"
+    return url + (f"#{anchor}" if anchor else "")
 
 
 class CalendarWidget(Static):
@@ -1488,23 +1511,29 @@ class BacktestApp(App):
             charts = getattr(self, "charts", {})
             trades_path = charts.get("trades", "")
             if trades_path and os.path.exists(trades_path):
-                if symbol and symbol not in (Select.BLANK, "__ALL__"):
-                    webbrowser.open(f"file://{trades_path}#{symbol}")
-                else:
-                    webbrowser.open(f"file://{trades_path}")
+                anchor = symbol if symbol and symbol not in (Select.BLANK, "__ALL__") else ""
+                self._open_chart(trades_path, anchor)
             else:
                 self.notify("TRADES CHART NOT GENERATED.", severity="warning")
         elif event.button.id and event.button.id.startswith("open-chart-"):
             chart_type = event.button.id.replace("open-chart-", "")
             if hasattr(self, "charts") and self.charts and chart_type in self.charts:
-                try:
-                    webbrowser.open(f"file://{self.charts[chart_type]}")
-                    self.notify(f"Opened {chart_type} chart in browser!", severity="information")
-                except Exception as e:
-                    self.notify(f"Could not open browser: {e}", severity="error")
+                self._open_chart(self.charts[chart_type])
             else:
                 self.notify(f"Chart '{chart_type}' not generated.", severity="warning")
         # ... (calendar buttons logic if needed)
+
+    def _open_chart(self, file_path: str, anchor: str = "") -> None:
+        if not file_path or not os.path.exists(file_path):
+            self.notify("Chart file not found.", severity="warning")
+            return
+        url = _chart_url(file_path, anchor)
+        # Try local browser (works on desktop); always show URL for SSH
+        try:
+            webbrowser.open(url)
+        except Exception:
+            pass
+        self.notify(f"Open in browser:\n{url}", severity="information", timeout=30)
 
     def _save_backtest(self, name: str = "") -> None:
         import shutil, csv

@@ -1,19 +1,41 @@
-# Meta exclusions
+# ── Version control & IDE ────────────────────────────────────────────────────
 .git/
+.gitignore
 .claude/
+.vscode/
+.idea/
 
-# Dynamic Python cache systems
+# ── Python cache & virtualenvs ───────────────────────────────────────────────
 __pycache__/
 *.py[cod]
+*.pyo
 .venv/
 venv/
 ENV/
+eggshell/
 
-# Active runtime streams
-reports/
-src/binance_service/cache/*.pkl
+# ── Data & cache (mounted as Docker volumes) ─────────────────────────────────
+src/binance_service/cache/
+reports/charts/
+reports/errors/
+reports/results/
 
-# Local dev debris
+# ── Config noise ─────────────────────────────────────────────────────────────
+config/debug_save.log
+pyrefly.toml
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
+.env
+*.key
+*.pem
+
+# ── Docs & scripts (not needed in image) ─────────────────────────────────────
+docs/
+*.md
+setup.sh
+run.sh
+
+# ── Dev debris ───────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
 Eggshell-Backtester/

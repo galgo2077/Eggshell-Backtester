@@ -1,65 +1,69 @@
-# 🪟 Windows Installation Guide: Eggshell Backtester
+# Windows Installation — Eggshell Backtester
 
-This guide will help you set up the **Eggshell Backtester** on Windows.
+## Option A · Docker (Recommended)
 
----
+Includes Ollama AI, n8n automation, and reports server pre-configured.
 
-## 📋 Prerequisites
-- **Python 3.10 or higher**
-- PowerShell or Command Prompt (CMD)
+### Prerequisites
+- [Docker Desktop](https://www.docker.com/products/docker-desktop/) with WSL2 backend enabled
 
----
+### 1. Authenticate to GitHub Container Registry
+```powershell
+echo "YOUR_GITHUB_PAT" | docker login ghcr.io -u YOUR_GITHUB_USERNAME --password-stdin
+```
+PAT needs `read:packages` scope.
 
-## 🛠️ Step-by-Step Setup
+### 2. Pull and run
+```powershell
+docker pull ghcr.io/galgo2077/eggshell:latest
 
-1. **Open your terminal** and navigate to the project folder:
-   ```powershell
-   cd "Stategies testing"
-   ```
+docker run -it --rm `
+  -e BINANCE_API_KEY=your_key `
+  -e BINANCE_API_SECRET=your_secret `
+  -p 5678:5678 `
+  -p 8080:8080 `
+  --privileged `
+  ghcr.io/galgo2077/eggshell:latest
+```
 
-2. **Create a virtual environment**:
-   ```powershell
-   python -m venv venv
-   ```
+### 3. Launch backtester inside container
+```bash
+eggshell
+```
 
-3. **Activate the environment**:
-   - **PowerShell**:
-     ```powershell
-     .\venv\Scripts\Activate.ps1
-     ```
-   - **CMD**:
-     ```cmd
-     .\venv\Scripts\activate.bat
-     ```
-
-4. **Install dependencies**:
-   ```powershell
-   pip install --upgrade pip
-   pip install -r requirements.txt
-   ```
-
-5. **(Optional) Configure API Keys**:
-   Create a file named `.env` in the root directory and add:
-   ```text
-   # For Binance data (default)
-   BINANCE_API_KEY=your_key_here
-   BINANCE_API_SECRET=your_secret_here
-   ```
-
-6. **Launch the Application**:
-   ```powershell
-   python Elliot/main.py
-   ```
+Services started automatically by systemd:
+| Service | URL |
+|---|---|
+| Ollama AI | `http://localhost:11434` |
+| n8n workflows | `http://localhost:5678` |
+| Reports browser | `http://localhost:8080` |
 
 ---
 
-## 🚀 Running Modes
+## Option B · Local Python
 
-- **TUI Mode (Default)**: Launches the interactive dashboard.
-  ```powershell
-  python Elliot/main.py
-  ```
-- **CLI Mode**: Runs a quick backtest in the terminal with prompts.
-  ```powershell
-  python Elliot/main.py --cli
-  ```
+### Prerequisites
+- Python 3.10+
+- PowerShell or Command Prompt
+
+### Setup
+```powershell
+git clone --recurse-submodules https://github.com/galgo2077/Eggshell-Backtester.git
+cd Eggshell-Backtester
+python -m venv venv
+.\venv\Scripts\Activate.ps1
+pip install --upgrade pip
+pip install -r requirements.txt
+```
+
+### Configure API keys (optional)
+Create `.env` in the root directory:
+```text
+BINANCE_API_KEY=your_key_here
+BINANCE_API_SECRET=your_secret_here
+```
+
+### Launch
+```powershell
+python src/main.py
+```

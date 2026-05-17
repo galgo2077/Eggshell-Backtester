@@ -1,34 +1,44 @@
-# ── Python ────────────────────────────────────────────────────────────────────
-__pycache__/
+# ── Python cache & virtualenvs ───────────────────────────────────────────────
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.pyo
-
-# ── Environments ──────────────────────────────────────────────────────────────
+*.pyd
+.Python
 .venv/
 venv/
 ENV/
+eggshell/
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
 .env
+*.key
+*.pem
 
-# ── Runtime cache (per-symbol parquet files) ──────────────────────────────────
-src/binance_service/cache/*.parquet
-src/binance_service/cache/*.pkl
+# ── Binance data cache ───────────────────────────────────────────────────────
+src/binance_service/cache/
 
-# ── Generated reports ─────────────────────────────────────────────────────────
-reports/charts/*.html
-reports/errors/error.log
+# ── Generated reports & charts ───────────────────────────────────────────────
+reports/charts/
+reports/errors/
 reports/results/
 
-# ── UI state ──────────────────────────────────────────────────────────────────
-config/ui_settings.json
+# ── Debug & runtime logs ─────────────────────────────────────────────────────
+config/debug_save.log
+*.log
 
-# ── System ────────────────────────────────────────────────────────────────────
+# ── IDE & editor ─────────────────────────────────────────────────────────────
+.vscode/
+.idea/
+*.swp
+*.swo
+pyrefly.toml
+
+# ── System ───────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db
-
-# ── Legacy cleanup ────────────────────────────────────────────────────────────
 Eggshell-Backtester/
-
-# ── IDE ───────────────────────────────────────────────────────────────────────
-.vscode/
-pyrefly.toml

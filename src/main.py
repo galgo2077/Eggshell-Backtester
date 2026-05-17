@@ -202,6 +202,8 @@ def run_backtest():
 
 if __name__ == "__main__":
     import os
+    import sys
+
     proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     reports_err = os.path.join(proj_root, "reports", "errors")
     err_log_path = os.path.join(reports_err, "error.log")
