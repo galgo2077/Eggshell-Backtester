@@ -31,6 +31,9 @@ reports/results/
 config/debug_save.log
 *.log
 
+# ── Claude Code ──────────────────────────────────────────────────────────────
+CLAUDE.md
+
 # ── IDE & editor ─────────────────────────────────────────────────────────────
 .vscode/
 .idea/
