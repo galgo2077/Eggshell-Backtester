@@ -20,8 +20,7 @@ reports/errors/error.log
 reports/results/
 
 # ── UI state ──────────────────────────────────────────────────────────────────
-config/ui_settings.json
-
+config/ui_settings.jsonconfig/debug_save.log
 # ── System ────────────────────────────────────────────────────────────────────
 .DS_Store
 Thumbs.db

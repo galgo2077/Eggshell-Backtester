@@ -148,3 +148,86 @@
 [09:46:13] _save OK → 21 keys written
 [09:46:41] Select.Changed: asset-chart-select=__ALL__
 [09:46:41] _save OK → 21 keys written
+[21:56:07] __init__ done
+[21:56:07] on_mount → scheduling _load_ui_settings
+[21:56:07] Input.Changed: size-input=20
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Input.Changed: cooldown-input=0
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Select.Changed: strategy-select=EMA_CROSS
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Select.Changed: opt_dual_strategy_condition=AND
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Select.Changed: opt_dual_strategy_strategy_a=EMA_CROSS
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Select.Changed: opt_dual_strategy_strategy_b=ELLIOT_BOLLINGER
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Input.Changed: start-date-input=2023-01-01
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Input.Changed: balance-input=1000
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Select.Changed: interval-select=1h
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Input.Changed: opt_ema_cross_fast_ema=9
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Input.Changed: opt_ema_cross_slow_ema=21
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Input.Changed: opt_ema_cross_mfi_length=14
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Input.Changed: opt_ema_cross_buy_level=30.0
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] Input.Changed: opt_ema_cross_sell_level=70.0
+[21:56:07] _save SKIPPED (_skip_save=True)
+[21:56:07] _load: read 21 keys from file
+[21:56:07] _load: strategy=EMA_CROSS
+[21:56:07] _load: FAILED to restore asset-chart-select='__ALL__': Illegal select value '__ALL__'.
+[21:56:07] _load: restored 27 widgets
+[21:56:07] _load: done
+[21:56:07] Input.Changed: size-input=50
+[21:56:07] _save OK → 21 keys written
+[21:56:07] Input.Changed: opt_ema_cross_fast_ema=9
+[21:56:07] _save OK → 21 keys written
+[21:56:07] Input.Changed: opt_ema_cross_slow_ema=21
+[21:56:07] _save OK → 21 keys written
+[21:56:07] Input.Changed: opt_ema_cross_mfi_length=14
+[21:56:07] _save OK → 21 keys written
+[21:56:07] Input.Changed: opt_ema_cross_buy_level=30.0
+[21:56:07] _save OK → 21 keys written
+[21:56:07] Input.Changed: opt_ema_cross_sell_level=70.0
+[21:56:07] _save OK → 21 keys written
+[21:56:16] Select.Changed: strategy-select=HERCULES_SENTIMENT
+[21:56:16] _save OK → 34 keys written
+[21:56:16] Input.Changed: opt_hercules_sentiment_fast_ema=9
+[21:56:16] _save OK → 34 keys written
+[21:56:16] Input.Changed: opt_hercules_sentiment_slow_ema=21
+[21:56:16] _save OK → 34 keys written
+[21:56:16] Input.Changed: opt_hercules_sentiment_mfi_length=14
+[21:56:16] _save OK → 34 keys written
+[21:56:16] Input.Changed: opt_hercules_sentiment_buy_score_max=4
+[21:56:16] _save OK → 34 keys written
+[21:56:16] Input.Changed: opt_hercules_sentiment_sell_score_min=7
+[21:56:16] _save OK → 34 keys written
+[21:56:16] Input.Changed: opt_hercules_sentiment_redis_host=localhost
+[21:56:16] _save OK → 34 keys written
+[21:56:16] Input.Changed: opt_hercules_sentiment_redis_port=6379
+[21:56:16] _save OK → 34 keys written
+[21:56:16] Input.Changed: opt_hercules_sentiment_buy_level=30.0
+[21:56:16] _save OK → 34 keys written
+[21:56:16] Input.Changed: opt_hercules_sentiment_sell_level=70.0
+[21:56:16] _save OK → 34 keys written
+[21:56:30] Select.Changed: strategy-select=ELLIOT_BOLLINGER
+[21:56:30] _save OK → 42 keys written
+[21:56:30] Input.Changed: opt_elliot_bollinger_ema_fast=10
+[21:56:30] _save OK → 42 keys written
+[21:56:30] Input.Changed: opt_elliot_bollinger_ema_medium=20
+[21:56:30] _save OK → 42 keys written
+[21:56:30] Input.Changed: opt_elliot_bollinger_ema_slow=50
+[21:56:30] _save OK → 42 keys written
+[21:56:30] Input.Changed: opt_elliot_bollinger_bollinger_sd_ratio=0.05
+[21:56:30] _save OK → 42 keys written
+[21:56:30] Input.Changed: opt_elliot_bollinger_pivot_window_divisor=25
+[21:56:30] _save OK → 42 keys written
+[21:56:30] Input.Changed: opt_elliot_bollinger_pivot_min_dist_divisor=15
+[21:56:30] _save OK → 42 keys written
+[21:56:30] Input.Changed: opt_elliot_bollinger_ai_analysis_interval_hours=None
+[21:56:30] _save OK → 42 keys written
