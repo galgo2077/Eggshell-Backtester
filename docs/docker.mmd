@@ -1,0 +1,58 @@
+%% Eggshell Backtester — Docker Architecture
+%% Render at https://mermaid.live
+%% Last updated: 2026-05-21
+
+flowchart TD
+
+  subgraph BUILD["Dockerfile · 6-Stage Multi-Stage Build"]
+    B1["ubuntu:24.04  AS base<br/>apt: systemd · python3-venv · build-essential · git<br/>curl pipe → Ollama install.sh<br/>nodesource → Node.js 20 LTS"]
+    B2["AS node-deps<br/>npm install -g n8n"]
+    B3["AS python-deps<br/>python3 -m venv /opt/venv<br/>pip install requirements.txt<br/>pyarrow  ›› fastparquet  ›› disabled"]
+    B4["AS model-pull  ← heaviest layer<br/>ollama serve &amp; (background, temp)<br/>ollama pull qwen2.5:0.5b<br/>ollama pull 0xroyce/plutus:latest<br/>pkill ollama · models frozen into layer"]
+    B5["AS app-source<br/>COPY . /app  (respects .dockerignore)<br/>git submodule update --init --recursive"]
+    B6["AS runtime  ·  FINAL IMAGE<br/>ENV: PYTHONPATH · OLLAMA_HOST · N8N_WEBHOOK_URL · MPLBACKEND<br/>PATH: /opt/venv/bin<br/>COPY systemd/*.service → /etc/systemd/system/<br/>systemctl --root=/ enable ollama n8n reports-server<br/>install /usr/local/bin/eggshell<br/>CMD /sbin/init"]
+
+    B1 --> B2 --> B3 --> B4 --> B5 --> B6
+  end
+
+  subgraph RUNTIME["Container Runtime · systemd as PID 1"]
+    INIT["/sbin/init<br/>systemd · boots all enabled units"]
+
+    subgraph SVCS["Managed systemd Services"]
+      OLLS["ollama.service<br/>ExecStart: /usr/local/bin/ollama serve<br/>Restart=always · RestartSec=5<br/>HOME=/root"]
+      N8NS["n8n.service<br/>ExecStart: /usr/local/bin/n8n start<br/>Restart=always · RestartSec=5<br/>N8N_HOST=0.0.0.0 · no auth"]
+      REPS["reports-server.service<br/>ExecStart: python3 -m http.server 8080<br/>--directory /app/reports<br/>Restart=always · RestartSec=3"]
+    end
+
+    INIT --> OLLS & N8NS & REPS
+  end
+
+  subgraph MODELS["AI Models · Baked at Build Time"]
+    QWEN["qwen2.5:0.5b<br/>~300 MB · fast general LLM<br/>used by ElliotBollinger strategy"]
+    PLUT["0xroyce/plutus:latest<br/>finance-tuned model<br/>used by SentimentProxy strategy"]
+  end
+
+  subgraph PORTS["Exposed Ports  (docker run -p HOST:CONTAINER)"]
+    P1[":11434  ·  Ollama inference REST API"]
+    P2[":5678   ·  n8n workflow UI and webhooks"]
+    P3[":8080   ·  Reports HTML static server"]
+  end
+
+  subgraph VOLS["Recommended Volume Mounts  (docker run -v)"]
+    V1["-v ./cache:/app/src/binance_service/cache<br/>parquet price data · persisted between runs"]
+    V2["-v ./reports:/app/reports<br/>charts · saved backtests · error.log"]
+  end
+
+  subgraph IGNORE[".dockerignore — excluded from COPY"]
+    IG1[".git/ · venv/ · __pycache__/<br/>*.md · docs/ · .env · *.key"]
+    IG2["src/binance_service/cache/<br/>reports/charts/ · reports/results/<br/>reports/errors/"]
+  end
+
+  B6 --> INIT
+  B4 --> MODELS
+  OLLS --> MODELS
+  OLLS --> P1
+  N8NS --> P2
+  REPS --> P3
+  B5 --> VOLS
+  B5 --> IG1 & IG2

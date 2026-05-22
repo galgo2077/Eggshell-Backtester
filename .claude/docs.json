@@ -1,0 +1,13 @@
+{
+  "src_dirs": ["src", "strategies"],
+  "docs_dir": "docs",
+  "inject": ["estructura.mmd", "analysis.md", "docker.mmd"],
+  "subgraphs": [
+    { "prefix": "ui/",               "id": "UI",      "label": "UI Layer" },
+    { "prefix": "core/",             "id": "CORE",    "label": "Core Engine" },
+    { "prefix": "binance_service/",  "id": "DATA",    "label": "Binance Data Layer" },
+    { "prefix": "strategies/",       "id": "STRAT",   "label": "Strategies" }
+  ],
+  "skip_files": ["__init__.py"],
+  "keep_init": ["strategies/__init__.py"]
+}
