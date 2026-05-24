@@ -4,7 +4,7 @@ After=network.target
 
 [Service]
 Type=simple
-ExecStart=python3 -m http.server 8080 --directory /app/reports
+ExecStart=/opt/venv/bin/python3 -m http.server 8080 --directory /eggshell/reports
 Restart=always
 RestartSec=3
 

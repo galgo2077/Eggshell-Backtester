@@ -1,0 +1,10 @@
+# ── Layer: nvidia ─────────────────────────────────────────────────────────────
+# NVIDIA userspace tools: nvidia-smi, nvlink, pciutils
+# On Vast.ai the host driver is bind-mounted — this layer adds the CLI tools.
+# Rebuild only when: driver version target changes
+FROM eggshell-tmux:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends \
+        pciutils \
+        nvidia-utils-550 \
+    && rm -rf /var/lib/apt/lists/*

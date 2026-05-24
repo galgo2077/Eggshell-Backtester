@@ -1,41 +1,22 @@
-# ── Version control & IDE ────────────────────────────────────────────────────
-.git/
-.gitignore
-.claude/
-.vscode/
-.idea/
-
-# ── Python cache & virtualenvs ───────────────────────────────────────────────
-__pycache__/
-*.py[cod]
-*.pyo
-.venv/
+# Local virtualenvs (conflict with container /opt/venv)
 venv/
-ENV/
+.venv/
 eggshell/
 
-# ── Data & cache (mounted as Docker volumes) ─────────────────────────────────
+# Git internals
+.git/
+
+# Runtime-generated data
 src/binance_service/cache/
 reports/charts/
 reports/errors/
 reports/results/
 
-# ── Config noise ─────────────────────────────────────────────────────────────
-config/debug_save.log
-pyrefly.toml
-
-# ── Secrets ──────────────────────────────────────────────────────────────────
+# Secrets
 .env
 *.key
 *.pem
 
-# ── Docs & scripts (not needed in image) ─────────────────────────────────────
-docs/
-*.md
-setup.sh
-run.sh
-
-# ── Dev debris ───────────────────────────────────────────────────────────────
-.DS_Store
-Thumbs.db
-Eggshell-Backtester/
+# Python bytecode
+__pycache__/
+*.pyc

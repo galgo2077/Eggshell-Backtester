@@ -1,0 +1,9 @@
+# ── Layer: fastfetch ──────────────────────────────────────────────────────────
+# System information display tool (installed from GitHub release)
+# Rebuild only when: fastfetch version changes
+FROM eggshell-python:latest
+
+RUN curl -fsSL https://github.com/fastfetch-cli/fastfetch/releases/latest/download/fastfetch-linux-amd64.deb \
+        -o /tmp/fastfetch.deb \
+    && dpkg -i /tmp/fastfetch.deb \
+    && rm /tmp/fastfetch.deb

@@ -1,0 +1,7 @@
+# ── Layer: btop ───────────────────────────────────────────────────────────────
+# Resource monitor
+# Rebuild only when: btop version changes
+FROM eggshell-fastfetch:latest
+
+RUN apt-get update && apt-get install -y --no-install-recommends btop \
+    && rm -rf /var/lib/apt/lists/*

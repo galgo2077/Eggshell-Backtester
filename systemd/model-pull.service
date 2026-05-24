@@ -1,0 +1,15 @@
+[Unit]
+Description=Pull Ollama AI models on first start
+After=ollama.service
+Requires=ollama.service
+
+[Service]
+Type=oneshot
+RemainAfterExit=yes
+ExecStartPre=/bin/bash -c 'until curl -sf http://localhost:11434/api/tags > /dev/null; do sleep 2; done'
+ExecStart=/bin/bash -c '\
+    ollama pull qwen2.5:0.5b && \
+    ollama pull 0xroyce/plutus:latest'
+
+[Install]
+WantedBy=multi-user.target
