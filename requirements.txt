@@ -1,0 +1,46 @@
+# ── Core data & math ────────────────────────────────────────────────────────
+numpy==2.4.5
+pandas==3.0.3
+pyarrow>=19.0
+scipy==1.17.1
+numba==0.65.1
+llvmlite==0.47.0
+scikit-learn==1.8.0
+
+# ── Backtesting engine ───────────────────────────────────────────────────────
+vectorbt==0.28.2
+
+# ── Market data ─────────────────────────────────────────────────────────────
+python-binance==1.0.36
+pycryptodome==3.23.0
+websockets==16.0
+aiohttp==3.13.5
+requests==2.34.2
+
+# ── Indicators ──────────────────────────────────────────────────────────────
+pandas-ta-classic==0.5.44
+
+# ── Visualisation ───────────────────────────────────────────────────────────
+plotly==6.7.0
+matplotlib==3.10.9
+Pillow==12.2.0
+
+# ── TUI ─────────────────────────────────────────────────────────────────────
+textual==8.2.6
+rich==15.0.0
+
+# ── Utilities ────────────────────────────────────────────────────────────────
+python-dotenv==1.2.2
+dateparser==1.4.0
+tqdm==4.67.3
+pytz==2026.2
+schedule==1.2.2
+
+# ── AI (optional — SETUP tab) ────────────────────────────────────────────────
+# The SETUP tab uses Ollama (local LLM server) with the qwen2.5:0.5b model.
+# If not installed the SETUP tab is automatically disabled (greyed out).
+#
+# Install Ollama:  https://ollama.com/download
+# Pull the model:  ollama pull qwen2.5:0.5b
+#
+# No Python package needed — the app talks to Ollama via its HTTP API directly.

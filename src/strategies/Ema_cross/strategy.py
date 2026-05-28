@@ -67,8 +67,8 @@ class EMACrossStrategy:
 
         fast_above_slow = self.df["FAST_EMA"] > self.df["SLOW_EMA"]
         fast_below_slow = self.df["FAST_EMA"] < self.df["SLOW_EMA"]
-        cross_up   = fast_above_slow & (~fast_above_slow).shift(1).fillna(False)
-        cross_down = fast_below_slow & (~fast_below_slow).shift(1).fillna(False)
+        cross_up   = fast_above_slow & ~fast_above_slow.shift(1, fill_value=True)
+        cross_down = fast_below_slow & ~fast_below_slow.shift(1, fill_value=True)
 
         buy_condition  = cross_up.copy()
         sell_condition = cross_down.copy()
@@ -79,9 +79,8 @@ class EMACrossStrategy:
             buy_condition  = buy_condition  & (self.df["MFI"] <= buy_lvl)
             sell_condition = sell_condition & (self.df["MFI"] >= sell_lvl)
 
-        self.df["buy"] = buy_condition
-        if self.params.get("ENABLED_SELL", constants.ENABLED_SELL):
-            self.df["sell"] = sell_condition
+        self.df["buy"]  = buy_condition
+        self.df["sell"] = sell_condition
 
         buys  = int(self.df["buy"].sum())
         sells = int(self.df["sell"].sum())

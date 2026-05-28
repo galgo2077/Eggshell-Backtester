@@ -6,6 +6,14 @@ import pandas as pd
 import numpy as np
 import vectorbt as vbt
 
+from analysis.modes import MONTE_CARLO, RANDOM_WALK, REAL_MARKET_BACKTEST, normalize_mode
+from graphs.portfolio_graphs import generate_portfolio_graphs
+from graphs.random_walk_graphs import generate_random_walk_graphs
+from core.performance import enable_high_performance_mode
+
+enable_high_performance_mode()
+vbt.settings["engine"] = "rust"
+
 
 def _safe(val, default=0.0):
     return default if pd.isna(val) else val
@@ -14,13 +22,22 @@ def _safe(val, default=0.0):
 class BacktestEngine:
     def __init__(self, signals_df: pd.DataFrame, initial_balance: float | None = None,
                  position_size_pct: float = 100.0, cooldown: int = 0,
-                 accumulate: bool = False, per_symbol_alloc: dict | None = None):
-        self.df = signals_df.copy()
+                 accumulate: bool = False, per_symbol_alloc: dict | None = None,
+                 vbt_params: dict | None = None, sell_at_end: bool = False,
+                 simulation_mode: str = "real_market_backtest",
+                 generate_charts: bool = True):
+        self.df = signals_df.copy(deep=False)
+        if "symbol" in self.df.columns:
+            self.df["symbol"] = self.df["symbol"].astype("category")
         self.initial_balance = initial_balance if initial_balance is not None else BacktestConstants.INITIAL_BALANCE
         self.position_size_pct = position_size_pct
         self.cooldown = cooldown
         self.accumulate = accumulate
         self.per_symbol_alloc = per_symbol_alloc
+        self.vbt_params = vbt_params or {}
+        self.sell_at_end = sell_at_end
+        self.simulation_mode = normalize_mode(simulation_mode)
+        self.generate_charts = generate_charts
         self.results: dict = {}
         self.trades: list[dict] = []
 
@@ -31,19 +48,78 @@ class BacktestEngine:
         if not isinstance(self.df.index, pd.DatetimeIndex):
             self.df.index = pd.to_datetime(self.df.index)
 
-        # Pivot signals into per-symbol columns
+        p = self.vbt_params
+
+        # Pivot OHLCV + signals into per-symbol columns
+        def _pivot(col, default=None):
+            if col not in self.df.columns:
+                return default
+            try:
+                return self.df.set_index([self.df.index, 'symbol'])[col].unstack('symbol')
+            except Exception:
+                try:
+                    return self.df.pivot_table(index=self.df.index, columns='symbol', values=col)
+                except Exception:
+                    return default
+
+        def _fill_bool(s):
+            # fillna on object-dtype columns triggers a FutureWarning in pandas ≥2.
+            # Convert to float first so fillna receives a numeric array, then cast.
+            return s.astype(float).fillna(0.0).astype(bool)
+
         try:
             close_df = self.df.set_index([self.df.index, 'symbol'])['close'].unstack('symbol')
-            buy_df   = self.df.set_index([self.df.index, 'symbol'])['buy'].unstack('symbol').fillna(False).astype(bool)
-            sell_df  = self.df.set_index([self.df.index, 'symbol'])['sell'].unstack('symbol').fillna(False).astype(bool)
+            buy_df   = _fill_bool(self.df.set_index([self.df.index, 'symbol'])['buy'].unstack('symbol'))
+            sell_df  = _fill_bool(self.df.set_index([self.df.index, 'symbol'])['sell'].unstack('symbol'))
         except Exception:
             close_df = self.df.pivot_table(index=self.df.index, columns='symbol', values='close')
-            buy_df   = self.df.pivot_table(index=self.df.index, columns='symbol', values='buy',  aggfunc='any').fillna(False).astype(bool)
-            sell_df  = self.df.pivot_table(index=self.df.index, columns='symbol', values='sell', aggfunc='any').fillna(False).astype(bool)
+            buy_df   = _fill_bool(self.df.pivot_table(index=self.df.index, columns='symbol', values='buy',  aggfunc='any'))
+            sell_df  = _fill_bool(self.df.pivot_table(index=self.df.index, columns='symbol', values='sell', aggfunc='any'))
 
-        # Force exit on the last candle
-        if not sell_df.empty:
-            sell_df.iloc[-1] = True
+        open_df  = _pivot('open',  np.nan)
+        high_df  = _pivot('high',  np.nan)
+        low_df   = _pivot('low',   np.nan)
+
+        if self.sell_at_end:
+            # SELL BLOCKED - sell_at_end enabled: wipe all intermediate exits so
+            # positions are held regardless of strategy signals, TP, or SL.
+            if on_progress:
+                on_progress(0.25, "SELL BLOCKED - sell_at_end enabled")
+            sell_df[:] = False
+            # FINAL CANDLE - Closing all positions at market price.
+            if not sell_df.empty:
+                if on_progress:
+                    on_progress(0.28, "FINAL CANDLE - Closing all positions")
+                sell_df.iloc[-1] = True
+
+            # Warn when pyramiding is off — only 1 trade per symbol will fire.
+            if not self.accumulate and on_progress:
+                on_progress(0.29, "SELL AT END + no pyramiding: each symbol limited to 1 trade")
+
+        else:
+            # Normal mode: force exit on the last candle in addition to strategy exits.
+            if not sell_df.empty:
+                sell_df.iloc[-1] = True
+
+        # ── Exposure manager: enforce global capital reservation before vbt ──────
+        # Active only for real-data backtests; bypassed for Monte Carlo / RW.
+        from gen_estructura import apply_exposure_filter
+        buy_df, _exp_mgr = apply_exposure_filter(
+            buy_df, sell_df,
+            position_size_pct=self.position_size_pct,
+            per_symbol_alloc=self.per_symbol_alloc,
+            sell_at_end=self.sell_at_end,
+            simulation_mode=self.simulation_mode,
+            equity=self.initial_balance,
+        )
+        if on_progress and _exp_mgr.rejected_entries:
+            on_progress(0.32,
+                f"[PORTFOLIO EXPOSURE MANAGER] "
+                f"Global Exposure Used: {_exp_mgr.reserved_exposure_pct:.1f}%  "
+                f"Remaining Exposure: {_exp_mgr.available_exposure_pct:.1f}%  "
+                f"Trade rejected: insufficient remaining portfolio exposure "
+                f"({len(_exp_mgr.rejected_entries)} rejected)"
+            )
 
         # Cooldown: suppress entries within N candles of the previous one
         if self.cooldown > 0:
@@ -60,42 +136,94 @@ class BacktestEngine:
         if on_progress:
             on_progress(0.4, "APPLYING TRADE SIZING & COOLDOWN...")
 
-        size_df = pd.DataFrame(np.nan, index=close_df.index, columns=close_df.columns)
-        n_cols = len(buy_df.columns)
+        size_df   = pd.DataFrame(np.nan, index=close_df.index, columns=close_df.columns)
+        n_cols    = len(buy_df.columns)
+        size_type = p.get("size_type", "value")
 
-        if self.accumulate:
-            for col in buy_df.columns:
-                sym = str(col)
-                alloc_frac = (
-                    self.per_symbol_alloc.get(sym, 100.0 / n_cols) / 100.0
-                    if self.per_symbol_alloc else 1.0
+        for col in buy_df.columns:
+            sym       = str(col)
+            alloc_frac = (
+                self.per_symbol_alloc.get(sym, 100.0 / n_cols) / 100.0
+                if self.per_symbol_alloc else 1.0 / n_cols
+            )
+            if size_type == "value":
+                size_df.loc[buy_df[col], col] = round(
+                    (self.position_size_pct / 100.0) * alloc_frac * self.initial_balance, 2
                 )
-                sym_pos = round((self.position_size_pct / 100.0) * alloc_frac * self.initial_balance, 2)
-                size_df.loc[buy_df[col], col] = sym_pos
-            size_df[sell_df] = np.inf
-            size_type = 'value'
-        else:
-            for col in buy_df.columns:
-                sym = str(col)
-                alloc_frac = (
-                    self.per_symbol_alloc.get(sym, 100.0 / n_cols) / 100.0
-                    if self.per_symbol_alloc else 1.0
-                )
+            else:  # percent
                 size_df.loc[buy_df[col], col] = (self.position_size_pct / 100.0) * alloc_frac
-            size_df[sell_df] = 1.0
-            size_type = 'percent'
+
+        size_df[sell_df] = np.inf if size_type == "value" else 1.0
+
+        sl_stop = p.get("sl_stop", np.nan)
+        tp_stop = p.get("tp_stop", np.nan)
+        if self.sell_at_end:
+            # Disable stop orders — positions must be held until the final candle.
+            sl_stop = np.nan
+            tp_stop = np.nan
+        else:
+            # Ask the resolver whether the strategy provided its own SL/TP columns.
+            # When it does, build per-candle fractional arrays and pivot them to
+            # (time × symbol) so vectorbt can use per-trade stop levels.
+            from gen_estructura import build_exit_arrays, has_valid_stops
+            _sl_series, _tp_series = build_exit_arrays(
+                self.df,
+                fallback_sl_pct=sl_stop if not (isinstance(sl_stop, float) and np.isnan(sl_stop)) else None,
+                fallback_tp_pct=tp_stop if not (isinstance(tp_stop, float) and np.isnan(tp_stop)) else None,
+            )
+            if _sl_series is not None or _tp_series is not None:
+                # Strategy provided exit levels — pivot flat series → (time × symbol)
+                _tmp = self.df[["symbol"]].copy()
+                _tmp["_sl"] = _sl_series if _sl_series is not None else np.nan
+                _tmp["_tp"] = _tp_series if _tp_series is not None else np.nan
+                try:
+                    sl_stop = _tmp.set_index([_tmp.index, "symbol"])["_sl"].unstack("symbol")
+                    tp_stop = _tmp.set_index([_tmp.index, "symbol"])["_tp"].unstack("symbol")
+                except Exception:
+                    sl_stop = _tmp.pivot_table(index=_tmp.index, columns="symbol", values="_sl")
+                    tp_stop = _tmp.pivot_table(index=_tmp.index, columns="symbol", values="_tp")
+
+        # has_valid_stops handles both scalar NaN and DataFrame/Series
+        from gen_estructura import has_valid_stops
+        use_stops = has_valid_stops(sl_stop) or has_valid_stops(tp_stop)
 
         portfolio = vbt.Portfolio.from_signals(
             close=close_df,
+            open=open_df if open_df is not None else np.nan,
+            high=high_df if high_df is not None else np.nan,
+            low=low_df  if low_df  is not None else np.nan,
             entries=buy_df,
             exits=sell_df,
             init_cash=self.initial_balance,
             size=size_df,
             size_type=size_type,
-            cash_sharing=True,
+            cash_sharing=p.get("cash_sharing", True),
             call_seq='auto',
             accumulate=self.accumulate,
             group_by=True,
+            engine="rust",
+            # ── Trading costs ──────────────────────────────
+            fees=p.get("fees", 0.0),
+            fixed_fees=p.get("fixed_fees", 0.0),
+            slippage=p.get("slippage", 0.0),
+            # ── Stop orders ────────────────────────────────
+            sl_stop=sl_stop,
+            sl_trail=p.get("sl_trail", False),
+            tp_stop=tp_stop,
+            stop_exit_price=p.get("stop_exit_price", 0),
+            use_stops=use_stops,
+            # ── Order behaviour ────────────────────────────
+            # sell_at_end: forbid sub-penny fills so entries stop cleanly when cash
+            # is exhausted (e.g. 1 % budget → ≤ 100 entries per $1 000 balance).
+            allow_partial=False if self.sell_at_end else p.get("allow_partial", True),
+            lock_cash=p.get("lock_cash", False),
+            reject_prob=p.get("reject_prob", 0.0),
+            min_size=p.get("min_size", 0.0),
+            max_size=p.get("max_size", np.inf),
+            upon_opposite_entry=p.get("upon_opposite_entry", 4),
+            direction=p.get("direction", 0),
+            # upon_long_conflict replaces the removed conflict_mode from older vbt API
+            upon_long_conflict=p.get("upon_long_conflict", 0),
         )
 
         if on_progress:
@@ -139,36 +267,53 @@ class BacktestEngine:
         except Exception:
             vbt_trades = pd.DataFrame()
 
+        # Scalar SL/TP from params used for exit-reason inference (DataFrame
+        # per-candle stops can't be matched exactly, so fall back to "Sell Signal").
+        _sl_scalar = p.get("sl_stop", np.nan)
+        _tp_scalar = p.get("tp_stop", np.nan)
+        _sl_scalar = float(_sl_scalar) if np.isscalar(_sl_scalar) else np.nan
+        _tp_scalar = float(_tp_scalar) if np.isscalar(_tp_scalar) else np.nan
+        _last_ts = close_df.index[-1] if not close_df.empty else None
+
+        def _exit_reason(ret: float, exit_ts) -> str:
+            if _last_ts is not None and exit_ts == _last_ts:
+                return "Final Candle"
+            tol = 0.003  # 0.3 % tolerance for floating-point stop matching
+            if not np.isnan(_sl_scalar) and abs(ret + _sl_scalar) < tol:
+                return "Stop Loss"
+            if not np.isnan(_tp_scalar) and abs(ret - _tp_scalar) < tol:
+                return "Take Profit"
+            return "Sell Signal"
+
         formatted_trades = []
         sym_stats = {}
         wins = 0
 
         if not vbt_trades.empty:
-            for _, r in vbt_trades.iterrows():
-                sym = str(r['Column']) if 'Column' in r else "Unknown"
-                if isinstance(r.get('Column'), tuple):
-                    sym = r['Column'][0]
+            for row in vbt_trades.to_dict("records"):
+                col = row.get("Column", "Unknown")
+                sym = str(col[0] if isinstance(col, tuple) else col)
 
-                ret     = r['Return']
-                pnl     = r['PnL']
-                qty     = r['Size']
-                b_price = r['Avg Entry Price']
+                ret     = row["Return"]
+                pnl     = row["PnL"]
+                qty     = row["Size"]
+                b_price = row["Avg Entry Price"]
 
                 if ret > 0:
                     wins += 1
 
                 formatted_trades.append({
                     "symbol":              sym,
-                    "buy_time":            r['Entry Timestamp'],
-                    "sell_time":           r['Exit Timestamp'],
+                    "buy_time":            row["Entry Timestamp"],
+                    "sell_time":           row["Exit Timestamp"],
                     "buy_price":           b_price,
-                    "sell_price":          r['Avg Exit Price'],
+                    "sell_price":          row["Avg Exit Price"],
                     "profit_pct":          ret * 100.0,
                     "account_profit_pct":  pnl / self.initial_balance * 100.0 if self.initial_balance else 0.0,
                     "profit_usd":          pnl,
                     "investment":          qty * b_price,
                     "quantity":            qty,
-                    "reason":              "Buy Sig -> Sell Sig",
+                    "reason":              _exit_reason(ret, row["Exit Timestamp"]),
                 })
 
                 s = sym_stats.setdefault(sym, {"trades": 0, "wins": 0, "total_pct": 0.0})
@@ -201,7 +346,7 @@ class BacktestEngine:
             first = close_df.iloc[0].replace(0, np.nan)
             buy_hold = float(((close_df.iloc[-1] - first) / first).mean() * 100.0) if first.notna().any() else 0.0
 
-        charts = self._generate_charts(close_df, formatted_trades, portfolio)
+        charts = self._generate_charts(close_df, formatted_trades, portfolio) if self.generate_charts else {}
 
         if on_progress:
             on_progress(1.0, "GENERATING CHART REPORTS...")
@@ -233,155 +378,23 @@ class BacktestEngine:
             "timestamp_history": list(equity_series.index),
             "full_stats":        full_stats,
             "charts":            charts,
+            "execution_mode":    self.simulation_mode,
         }
         return self.results
 
     def _generate_charts(self, close_df, formatted_trades, portfolio) -> dict:
         proj_root  = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))
         charts_dir = os.path.join(proj_root, "reports", "charts")
-        charts = {
-            "main":       os.path.join(charts_dir, "vectorbt_report.html"),
-            "trades":     os.path.join(charts_dir, "vectorbt_trades.html"),
-            "underwater": os.path.join(charts_dir, "vectorbt_underwater.html"),
-            "value":      os.path.join(charts_dir, "vectorbt_value.html"),
-            "drawdowns":  os.path.join(charts_dir, "vectorbt_drawdowns.html"),
-            "returns":    os.path.join(charts_dir, "vectorbt_returns.html"),
-            "cash":       os.path.join(charts_dir, "vectorbt_cash.html"),
-        }
-        if close_df.empty:
-            return charts
-
         try:
-            os.makedirs(charts_dir, exist_ok=True)
-            self._write_trades_chart(close_df, formatted_trades, charts["trades"])
-
-            for key, method in [
-                ("main",       portfolio.plot),
-                ("underwater", portfolio.plot_underwater),
-                ("value",      portfolio.plot_value),
-                ("drawdowns",  portfolio.plot_drawdowns),
-                ("returns",    portfolio.plot_cum_returns),
-                ("cash",       portfolio.plot_cash_flow),
-            ]:
-                try:
-                    method().write_html(charts[key])
-                except Exception:
-                    pass
+            if self.simulation_mode == REAL_MARKET_BACKTEST:
+                return generate_portfolio_graphs(close_df, formatted_trades, portfolio, charts_dir)
+            if self.simulation_mode == RANDOM_WALK:
+                return generate_random_walk_graphs(close_df, self.results, charts_dir)
+            if self.simulation_mode == MONTE_CARLO:
+                return {}
         except Exception as e:
             self._log_error(f"chart generation: {e}")
-        return charts
-
-    def _write_trades_chart(self, close_df, formatted_trades, path: str):
-        import plotly.graph_objects as go
-        import json as _json
-
-        colors = ['#818cf8', '#34d399', '#fb7185', '#fbbf24', '#22d3ee', '#a78bfa']
-        symbols = list(close_df.columns)
-        N = 3  # traces per symbol: price, buys, sells
-
-        fig = go.Figure()
-
-        for idx, symbol in enumerate(symbols):
-            color  = colors[idx % len(colors)]
-            is_first = idx == 0
-            sym_trades = [t for t in formatted_trades if t['symbol'] == symbol]
-
-            fig.add_trace(go.Scatter(
-                x=close_df.index, y=close_df[symbol],
-                mode='lines', name=f'{symbol} Price',
-                line=dict(color=color, width=2), opacity=0.9,
-                visible=is_first,
-            ))
-            fig.add_trace(go.Scatter(
-                x=[t['buy_time']   for t in sym_trades],
-                y=[t['buy_price']  for t in sym_trades],
-                mode='markers', name=f'BUY',
-                marker=dict(symbol='triangle-up', size=16, color='#22c55e',
-                            line=dict(color='#15803d', width=2)),
-                hovertemplate='<b>BUY</b><br>%{x}<br>$%{y:,.4f}<extra></extra>',
-                visible=is_first,
-            ))
-            fig.add_trace(go.Scatter(
-                x=[t['sell_time']  for t in sym_trades],
-                y=[t['sell_price'] for t in sym_trades],
-                mode='markers', name=f'SELL',
-                marker=dict(symbol='triangle-down', size=16, color='#ef4444',
-                            line=dict(color='#b91c1c', width=2)),
-                hovertemplate='<b>SELL</b><br>%{x}<br>$%{y:,.4f}<extra></extra>',
-                visible=is_first,
-            ))
-
-        # Build per-asset dropdown buttons
-        buttons = []
-        for idx, symbol in enumerate(symbols):
-            vis = [False] * (len(symbols) * N)
-            for j in range(N):
-                vis[idx * N + j] = True
-            buttons.append(dict(
-                label=symbol,
-                method='update',
-                args=[{'visible': vis},
-                      {'title': {'text': f'Trade Execution — {symbol}',
-                                 'font': {'color': '#f8fafc', 'size': 22, 'family': 'Arial'}}}]
-            ))
-
-        fig.update_layout(
-            title=dict(text=f'Trade Execution — {symbols[0] if symbols else ""}',
-                       font=dict(color='#f8fafc', size=22, family='Arial')),
-            paper_bgcolor='#0b0f19', plot_bgcolor='#111827',
-            hovermode='x unified',
-            updatemenus=[dict(
-                buttons=buttons,
-                direction='down',
-                showactive=True,
-                x=0.0, xanchor='left',
-                y=1.18, yanchor='top',
-                bgcolor='#1e293b', bordercolor='#00ffff',
-                font=dict(color='#f8fafc', size=13),
-            )],
-            legend=dict(font=dict(color='#94a3b8', size=12),
-                        bgcolor='rgba(11,15,25,0.85)', bordercolor='#334155', borderwidth=1),
-            xaxis=dict(title=dict(text='Date', font=dict(color='#94a3b8', size=12)),
-                       tickfont=dict(color='#94a3b8'), gridcolor='#1f2937',
-                       rangeslider=dict(visible=True)),
-            yaxis=dict(title=dict(text='Price ($)', font=dict(color='#94a3b8', size=12)),
-                       tickfont=dict(color='#94a3b8'), gridcolor='#1f2937'),
-            margin=dict(l=50, r=50, t=110, b=50),
-        )
-
-        html_str = fig.to_html(full_html=True, include_plotlyjs='cdn')
-
-        # Inject JS: read URL hash and restyle to the matching asset
-        symbols_js = _json.dumps(symbols)
-        js = f"""
-<script>
-(function() {{
-  function applyHash() {{
-    var symbols = {symbols_js};
-    var hash = decodeURIComponent(window.location.hash.replace('#', ''));
-    var idx = symbols.indexOf(hash);
-    if (idx < 0) return;
-    var N = {N};
-    var total = symbols.length * N;
-    var vis = [];
-    for (var i = 0; i < total; i++) {{
-      var si = Math.floor(i / N);
-      vis.push(si === idx);
-    }}
-    var gd = document.querySelector('.js-plotly-plot');
-    if (gd) {{
-      Plotly.restyle(gd, {{visible: vis}});
-      Plotly.relayout(gd, {{title: {{text: 'Trade Execution — ' + hash}}}});
-    }}
-  }}
-  if (document.readyState === 'complete') {{ applyHash(); }}
-  else {{ window.addEventListener('load', applyHash); }}
-}})();
-</script>
-"""
-        html_str = html_str.replace('</body>', js + '</body>')
-        with open(path, 'w') as f:
-            f.write(html_str)
+        return {}
 
     def _log_error(self, msg: str):
         proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__))))

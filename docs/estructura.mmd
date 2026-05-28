@@ -1,83 +1,138 @@
-%% Eggshell Backtester — Module Dependency Map
+%% Eggshell Backtester Prober v1.2 - Module Dependency Map
 %% Render at https://mermaid.live or open reports/estructura.html
-%% Last updated: 2026-05-10
+%% Last updated: 2026-05-28
 
 flowchart TD
 
-  MAIN["main.py · CLI runner"]
+  MAIN["src/main.py<br/>CLI runner + TUI launcher"]
 
-  subgraph UI["UI Layer"]
-    TUI["ui/tui.py · BacktestApp"]
-    SAVE["_save_backtest() · modal → reports/results/NAME/"]
-    LOAD["_load_backtest() · modal → restores full UI state"]
-    PIE["_draw_pie_chart() · braille Unicode pie (tab PIE)"]
-    ALLOC["#alloc-section · per-asset % inputs (sum=100%)"]
+  subgraph UI["Textual TUI Layer"]
+    APP["ui/tui/composer.py<br/>BacktestApp orchestrator"]
+    STATE["ui/tui/state/app_state.py<br/>central runtime state"]
+    THEME["ui/tui/theme/styles.py<br/>APP_CSS"]
+    HELPERS["ui/tui/utils/helpers.py<br/>chart URL + embedded reports server"]
+    AIUI["ui/tui/utils/ai_analyzer.py<br/>mode-aware AI/report builder"]
+    OLLAMAUI["ui/tui/utils/ollama.py<br/>Ollama model integration"]
+
+    subgraph TABS["ui/tui/tabs/"]
+      STRATPICK["strategy_picker_tab.py"]
+      DATATAB["data_tab.py<br/>REAL / RANDOM_WALK / MONTE_CARLO<br/>DataTabScrollManager"]
+      PARAMS["strategy_params_tab.py"]
+      RISK["risk_tab.py"]
+      TRADES["trades_tab.py"]
+      CHART["chart_tab.py<br/>mode-aware chart buttons"]
+      STATS["stats_tab.py"]
+      PIE["pie_tab.py<br/>real-market allocation only"]
+      SETUP["setup_tab.py<br/>AI analysis"]
+      LOGS["logs_tab.py"]
+    end
+
+    subgraph COMPONENTS["ui/tui/components/"]
+      CAL["calendar.py"]
+      MODALS["modals.py<br/>save/load/allocation"]
+    end
+  end
+
+  subgraph MODES["Execution Mode Isolation"]
+    MODEHELP["analysis/modes.py<br/>normalize_mode()"]
+    MCA["analysis/montecarlo/analyzer.py<br/>simulation paths + distributions"]
+    RWA["analysis/random_walk/analyzer.py<br/>stochastic movement"]
+    RMA["analysis/real_market/analyzer.py<br/>real OHLCV boundary"]
+    LTA["analysis/live_trading/analyzer.py<br/>live execution boundary"]
+  end
+
+  subgraph GRAPHS["Mode-Specific Graph Generators"]
+    PG["graphs/portfolio_graphs.py<br/>real-market vectorbt charts + trades"]
+    RWG["graphs/random_walk_graphs.py<br/>stochastic paths + drift/volatility"]
+    MCG["graphs/montecarlo_graphs.py<br/>path cloud · percentiles · distributions · 3D"]
+    LG["graphs/live_graphs.py<br/>live placeholder boundary"]
   end
 
   subgraph CORE["Core Engine"]
-    SL["core/signal_logic.py · SignalLogic · on_progress callback"]
-    BE["core/backtest_engine.py · BacktestEngine · on_progress(pct, msg)"]
-    CONST["core/constants.py · STRATEGY_SCHEMAS / ConnectConstants"]
+    SL["core/signal_logic.py<br/>strategy dispatch + dual strategy merge"]
+    BE["core/backtest_engine.py<br/>vectorbt execution + mode-aware charts"]
+    CONST["core/constants.py<br/>strategy schemas + app constants"]
+    EXIT["gen_estructura<br/>SL/TP resolver + exposure filter<br/>(imported from scripts path)"]
   end
 
-  subgraph DATA["Binance Data Layer"]
-    DF["binance_service/dataframe.py · Dataframe · on_progress callback"]
-    CACHE["cache/{SYM}_{interval}.parquet · per-symbol cache files"]
-    CONN["binance_service/connect.py · Connect"]
+  subgraph DATA["Market Data Layer"]
+    DF["binance_service/dataframe.py<br/>parallel OHLCV fetch + parquet cache"]
+    CACHE["src/binance_service/cache/*.parquet"]
+    CONN["binance_service/connect.py<br/>python-binance client"]
   end
 
-  subgraph STRAT["Strategies"]
-    EBS["Elliot_bollinger/strategy.py · ElliotBollingerStrategy"]
-    EBC["Elliot_bollinger/constants.py"]
-    EMAS["Ema_cross/strategy.py · EMACrossStrategy · on_progress steps"]
-    EMAC["Ema_cross/constants.py"]
+  subgraph STRAT["Strategy Plugins"]
+    DISC["strategies/__init__.py<br/>auto-discovery registry"]
+    EMA["strategies/Ema_cross/<br/>EMA crossover"]
+    ELLIOT["strategies/Strategies-eggshell/Elliot_bollinger/<br/>AI-assisted strategy"]
+    SENT["strategies/Strategies-eggshell/Sentiment_proxy/<br/>n8n/Ollama sentiment"]
   end
 
-  subgraph EXT["Third-party"]
-    VBT["vectorbt"]
+  subgraph REPORTS["reports/"]
+    RCHARTS["charts/*.html<br/>latest chart output"]
+    RRESULTS["results/NAME/<br/>saved snapshots"]
+    RSTATS["stats.txt"]
+    RTRADES["trades.csv"]
+    RJSON["results.json"]
+    RLINKS["charts_links.html"]
+    RERR["errors/error.log"]
+  end
+
+  subgraph EXT["External Libraries / Services"]
     TEXTUAL["textual"]
     RICH["rich"]
+    VBT["vectorbt"]
     PLOTLY["plotly"]
-    BAPI["python-binance"]
-    OLLAMA["ollama (localhost:11434)"]
+    BINANCE["python-binance"]
+    OLLAMA["Ollama API :11434"]
+    N8N["n8n :5678"]
+    HTTP["embedded reports HTTP :8080"]
   end
 
-  subgraph REPORTS["reports/  (git-ignored content, dirs tracked via .gitkeep)"]
-    RCHARTS["charts/ · live HTML charts (overwritten each run)"]
-    RRESULTS["results/NAME/ · named saved snapshots"]
-    RSTATS["  ├─ stats.txt · full metrics log"]
-    RTRADES["  ├─ trades.csv · trade records"]
-    RJSON["  ├─ results.json · full results dict for reload"]
-    RCOPY["  ├─ charts/ · copied HTML charts"]
-    RLINKS["  └─ charts_links.html · local file:// hyperlinks"]
-    RERR["errors/error.log · runtime errors"]
-  end
-
-  subgraph GITIGNORE[".gitignore rules"]
-    IGN1["cache/*.parquet  cache/*.pkl"]
-    IGN2["reports/charts/*.html"]
-    IGN3["reports/errors/error.log"]
-    IGN4["reports/results/"]
-    IGN5["config/ui_settings.json"]
-  end
-
-  MAIN --> TUI
-  TUI  --> DF & SL & BE & CONST & TEXTUAL
-  TUI  --> SAVE & LOAD & PIE & ALLOC
-  SAVE --> RRESULTS
-  RRESULTS --> RSTATS & RTRADES & RJSON & RCOPY & RLINKS
-  LOAD --> RRESULTS
-  PIE  --> ALLOC
-  SL   --> EMAS & EBS
-  BE   --> CONST & VBT & PLOTLY
-  BE   --> RCHARTS & RERR
-  DF   --> CACHE & CONN
-  CONN --> BAPI
-  CONST --> EBC & EMAC
-  EBS  --> EBC & OLLAMA
-  EMAS --> EMAC
+  MAIN --> APP
   MAIN --> RICH
-  CACHE -.gitignore.-> IGN1
-  RCHARTS -.gitignore.-> IGN2
-  RERR -.gitignore.-> IGN3
-  RRESULTS -.gitignore.-> IGN4
+
+  APP --> STATE & THEME & HELPERS & AIUI & OLLAMAUI
+  APP --> TABS & COMPONENTS
+  APP --> DF & SL & BE & CONST
+  APP --> MODEHELP
+  DATATAB --> MODEHELP
+  CHART --> APP
+  PIE --> APP
+  SETUP --> AIUI
+  HELPERS --> HTTP
+  HELPERS --> RCHARTS
+
+  APP -->|REAL| DF
+  APP -->|RANDOM_WALK| SL
+  APP -->|MONTE_CARLO| SL
+  APP -->|synthetic GBM paths| BE
+
+  AIUI --> MODEHELP
+  AIUI --> MCA & RWA & RMA & LTA
+  OLLAMAUI --> OLLAMA
+
+  BE --> MODEHELP
+  BE --> VBT
+  BE --> EXIT
+  BE --> PG & RWG
+  APP --> MCG
+  PG --> PLOTLY
+  RWG --> PLOTLY
+  MCG --> PLOTLY
+  PG --> RCHARTS
+  RWG --> RCHARTS
+  MCG --> RCHARTS
+
+  DF --> CACHE & CONN
+  CONN --> BINANCE
+
+  SL --> DISC
+  DISC --> EMA & ELLIOT & SENT
+  CONST --> DISC
+  ELLIOT --> OLLAMA
+  SENT --> N8N
+
+  APP --> RRESULTS & RERR
+  BE --> RERR
+  RRESULTS --> RSTATS & RTRADES & RJSON & RLINKS

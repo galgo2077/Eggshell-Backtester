@@ -1,36 +1,50 @@
-# ── Python ────────────────────────────────────────────────────────────────────
-__pycache__/
+# ── Python cache & virtualenvs ───────────────────────────────────────────────
+**/__pycache__/
 *.py[cod]
 *$py.class
 *.pyo
-
-# ── Environments ──────────────────────────────────────────────────────────────
+*.pyd
+.Python
 .venv/
 venv/
 ENV/
+eggshell/
+.pytest_cache/
+**/.pytest_cache/
+.mypy_cache/
+.ruff_cache/
+
+# ── Secrets ──────────────────────────────────────────────────────────────────
 .env
+*.key
+*.pem
 
-# ── Runtime cache (per-symbol parquet files) ──────────────────────────────────
-src/binance_service/cache/*.parquet
-src/binance_service/cache/*.pkl
+# ── Binance data cache ───────────────────────────────────────────────────────
+src/binance_service/cache/
 
-# ── Generated reports ─────────────────────────────────────────────────────────
-reports/charts/*.html
-reports/errors/error.log
+# ── Generated reports & charts ───────────────────────────────────────────────
+reports/charts/
+reports/errors/
 reports/results/
 
-# ── UI state ──────────────────────────────────────────────────────────────────
-config/ui_settings.jsonconfig/debug_save.log
-# ── System ────────────────────────────────────────────────────────────────────
-.DS_Store
-Thumbs.db
+# ── Debug & runtime logs ─────────────────────────────────────────────────────
+config/debug_save.log
+*.log
 
-# ── Legacy cleanup ────────────────────────────────────────────────────────────
-Eggshell-Backtester/
-
-# ── Claude Code ───────────────────────────────────────────────────────────────
+# ── Claude Code ──────────────────────────────────────────────────────────────
 CLAUDE.md
 
-# ── IDE ───────────────────────────────────────────────────────────────────────
-.vscode/
+# ── IDE & editor ─────────────────────────────────────────────────────────────
+.idea/
+*.swp
+*.swo
 pyrefly.toml
+
+# ── System ───────────────────────────────────────────────────────────────────
+.DS_Store
+Thumbs.db
+Eggshell-Backtester/
+branch_structure.json
+temp_auto_push.bat
+temp_interactive_push.bat
+.gitignore
