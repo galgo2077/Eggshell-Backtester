@@ -1,6 +1,7 @@
 # ── Core data & math ────────────────────────────────────────────────────────
 numpy==2.4.5
 pandas==3.0.3
+pyarrow>=19.0
 scipy==1.17.1
 numba==0.65.1
 llvmlite==0.47.0
@@ -34,3 +35,12 @@ dateparser==1.4.0
 tqdm==4.67.3
 pytz==2026.2
 schedule==1.2.2
+
+# ── AI (optional — SETUP tab) ────────────────────────────────────────────────
+# The SETUP tab uses Ollama (local LLM server) with the qwen2.5:0.5b model.
+# If not installed the SETUP tab is automatically disabled (greyed out).
+#
+# Install Ollama:  https://ollama.com/download
+# Pull the model:  ollama pull qwen2.5:0.5b
+#
+# No Python package needed — the app talks to Ollama via its HTTP API directly.

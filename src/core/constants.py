@@ -1,5 +1,4 @@
 import os
-import pandas as pd
 
 class ConnectConstantsBinance:
     def __init__(self):
@@ -23,8 +22,6 @@ class DataframeConstantsBinance:
         
 class BacktestConstants:
     INITIAL_BALANCE = 1000.0
-    TAKE_PROFIT_PCT = 0.05
-    STOP_LOSS_PCT = 0.02
 
 from strategies import STRATEGY_REGISTRY
 
@@ -58,38 +55,25 @@ CONFIG_REGISTRY.extend([
     {"Strategy": "DUAL_STRATEGY", "Category": "STRATEGY", "Key": "CONDITION", "Type": "str", "Default": "AND", "Label": "SIGNAL CONDITION"},
 ])
 
-# GENERATE DYNAMIC DATAFRAME REPRESENTATION
-CONFIG = pd.DataFrame(CONFIG_REGISTRY)
+CONFIG = CONFIG_REGISTRY
 
-def build_strategy_schemas_from_config(cfg_df):
-    """
-    Converts the flat configuration DataFrame into the hierarchical 
-    dictionary structure utilized by the UI logic.
-    """
+def build_strategy_schemas_from_config(cfg_list):
     schemas = {}
-    for _, row in cfg_df.iterrows():
+    for row in cfg_list:
         strat = row["Strategy"]
-        cat = row["Category"]
-        key = row["Key"]
-        
+        cat   = row["Category"]
+        key   = row["Key"]
         if strat not in schemas:
             schemas[strat] = {}
         if cat not in schemas[strat]:
             schemas[strat][cat] = {}
-            
         schemas[strat][cat][key] = {
-            "type": row["Type"],
+            "type":    row["Type"],
             "default": row["Default"],
-            "label": row["Label"]
+            "label":   row["Label"],
         }
     return schemas
 
-# EXPORT GLOBAL SCHEMAS 
 STRATEGY_SCHEMAS = build_strategy_schemas_from_config(CONFIG)
 
 
-def get_settings_dataframe():
-    """
-    Alias to existing systems requesting copy of configuration settings.
-    """
-    return CONFIG.copy()

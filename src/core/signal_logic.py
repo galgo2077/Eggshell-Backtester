@@ -7,25 +7,23 @@ from strategies import STRATEGY_CLASSES, STRATEGY_REGISTRY
 
 
 class SignalLogic:
-    def __init__(self, df, 
-                 ENABLED_EMA: bool = True, 
-                 FAST_EMA: int = 9, 
-                 SLOW_EMA: int = 21, 
+    def __init__(self, df,
+                 ENABLED_EMA: bool = True,
+                 FAST_EMA: int = 9,
+                 SLOW_EMA: int = 21,
                  ENABLED_MFI: bool = False,
                  MFI_LENGTH: int = 14,
-                 ENABLED_SELL: bool = True, 
-                 BUY_LEVEL: float = 30.0, 
-                 SELL_LEVEL: float = 70.0, 
+                 BUY_LEVEL: float = 30.0,
+                 SELL_LEVEL: float = 70.0,
                  on_progress: callable = None,
                  **kwargs):
-        
+
         self.params = {
             "ENABLED_EMA": ENABLED_EMA,
             "FAST_EMA": FAST_EMA,
             "SLOW_EMA": SLOW_EMA,
             "ENABLED_MFI": ENABLED_MFI,
             "MFI_LENGTH": MFI_LENGTH,
-            "ENABLED_SELL": ENABLED_SELL,
             "BUY_LEVEL": BUY_LEVEL,
             "SELL_LEVEL": SELL_LEVEL,
             "on_progress": on_progress,

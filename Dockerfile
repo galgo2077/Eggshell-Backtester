@@ -5,7 +5,7 @@ FROM eggshell-nvidia:latest
 
 ENV PYTHONUNBUFFERED=1 \
     PYTHONDONTWRITEBYTECODE=1 \
-    PYTHONPATH=/eggshell/src \
+    PYTHONPATH=/eggshell/src:/eggshell/scripts \
     PATH="/opt/venv/bin:$PATH" \
     MPLBACKEND=Agg \
     OLLAMA_HOST=http://localhost:11434 \

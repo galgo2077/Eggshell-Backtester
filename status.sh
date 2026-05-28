@@ -53,5 +53,4 @@ port_status "Reports  :8080 " 8080  "/"
 # ── Disk ──────────────────────────────────────────────────────────────────────
 echo -e "\n${CYAN}${BOLD}── Disk ────────────────────────────────────────────${RESET}"
 df -h / /eggshell 2>/dev/null | awk 'NR==1{print "  "$0} NR>1{print "  "$0}'
-
-echo -e "\n${DIM}Run 'eggshell' to launch the backtester TUI.${RESET}\n"
+read -s GITHUB_TOKEN && export GITHUB_TOKENe "\n${DIM}Run 'eggshell' to launch the backtester TUI.${RESET}\n"

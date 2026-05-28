@@ -10,7 +10,4 @@ WORKDIR /eggshell
 COPY requirements.txt .
 
 RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt && \
-    pip install --no-cache-dir --only-binary :all: pyarrow \
-    || pip install --no-cache-dir fastparquet \
-    || echo "WARNING: no parquet backend — cache disabled"
+    pip install --no-cache-dir -r requirements.txt

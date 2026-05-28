@@ -1,6 +1,12 @@
 import os
 import sys
 from datetime import datetime
+
+# scripts/ lives one level above src/ — add it so gen_estructura is importable
+sys.path.insert(0, os.path.join(os.path.dirname(__file__), "..", "scripts"))
+from core.performance import enable_high_performance_mode
+enable_high_performance_mode()
+
 from dotenv import load_dotenv
 
 from rich.console import Console
@@ -146,7 +152,7 @@ def run_backtest():
     
     console.clear()
     console.print(Panel.fit(
-        "[bold cyan]EGGSHELL BACKTESTER v1.1[/bold cyan]",
+        "[bold cyan]EGGSHELL BACKTESTER PROBER version 1.2[/bold cyan]",
         border_style="magenta"
     ))
     
@@ -201,38 +207,32 @@ def run_backtest():
     
 
 if __name__ == "__main__":
-    import os
-    import sys
+    import traceback
 
     proj_root = os.path.dirname(os.path.dirname(os.path.abspath(__file__)))
     reports_err = os.path.join(proj_root, "reports", "errors")
     err_log_path = os.path.join(reports_err, "error.log")
-    
+
     if os.path.exists(err_log_path):
         open(err_log_path, "w").close()
 
-    # Launch TUI by default
-    import sys
     if "--cli" in sys.argv:
         try:
             run_backtest()
         except Exception as e:
-            import traceback
-            import os
             os.makedirs(reports_err, exist_ok=True)
             with open(err_log_path, "a") as f:
                 f.write(f"{datetime.now()}: {e}\n{traceback.format_exc()}\n")
             console.print(f"\n[bold red]Backtest failed: {e}[/bold red]")
     else:
-        # Ensure terminal buffer is completely clean so visual artifacts don't collide with the TUI frame!
-        import os
+        # Clear terminal to avoid visual artifacts colliding with the TUI frame
         os.system('clear')
         
         app = BacktestApp()
         app.run()
         console.print("\n")
         console.print(Panel.fit(
-            "[bold cyan]THANKS FOR USING EGGSHELL BACKTESTER v1.1[/bold cyan]\n"
+            "[bold cyan]THANKS FOR USING EGGSHELL BACKTESTER PROBER version 1.2[/bold cyan]\n"
             "[dim]See you in the next backtest session![/dim]",
             border_style="magenta",
             padding=(1, 5)
