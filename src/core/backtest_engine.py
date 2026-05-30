@@ -12,7 +12,45 @@ from graphs.random_walk_graphs import generate_random_walk_graphs
 from core.performance import enable_high_performance_mode
 
 enable_high_performance_mode()
-vbt.settings["engine"] = "rust"
+
+# Numba JIT cooldown — ~100× faster than the pure-Python loop on large arrays.
+# Falls back transparently when numba is unavailable.
+try:
+    from numba import njit as _njit
+
+    @_njit(cache=True)
+    def _apply_cooldown_numba(col_arr, cooldown):
+        last_entry = -cooldown - 1
+        for i in range(len(col_arr)):
+            if col_arr[i]:
+                if i - last_entry <= cooldown:
+                    col_arr[i] = False
+                else:
+                    last_entry = i
+        return col_arr
+
+    _NUMBA_COOLDOWN = True
+except ImportError:
+    _NUMBA_COOLDOWN = False
+
+
+def _apply_cooldown_numpy(arr: np.ndarray, cooldown: int) -> np.ndarray:
+    """
+    Fast cooldown suppression without numba.
+    Iterates only over the (typically sparse) True positions rather than
+    every element, so it's O(signals) rather than O(bars).
+    """
+    result = arr.copy()
+    true_positions = np.where(result)[0]
+    if len(true_positions) < 2:
+        return result
+    last = true_positions[0]
+    for idx in true_positions[1:]:
+        if idx - last <= cooldown:
+            result[idx] = False
+        else:
+            last = idx
+    return result
 
 
 def _safe(val, default=0.0):
@@ -124,14 +162,12 @@ class BacktestEngine:
         # Cooldown: suppress entries within N candles of the previous one
         if self.cooldown > 0:
             for col in buy_df.columns:
-                col_idx = buy_df.columns.get_loc(col)
-                last_entry = -self.cooldown - 1
-                for i in range(len(buy_df)):
-                    if buy_df.iat[i, col_idx]:
-                        if i - last_entry <= self.cooldown:
-                            buy_df.iat[i, col_idx] = False
-                        else:
-                            last_entry = i
+                arr = buy_df[col].to_numpy(dtype=np.bool_)
+                if _NUMBA_COOLDOWN:
+                    arr = _apply_cooldown_numba(arr, self.cooldown)
+                else:
+                    arr = _apply_cooldown_numpy(arr, self.cooldown)
+                buy_df[col] = arr
 
         if on_progress:
             on_progress(0.4, "APPLYING TRADE SIZING & COOLDOWN...")
@@ -201,7 +237,6 @@ class BacktestEngine:
             call_seq='auto',
             accumulate=self.accumulate,
             group_by=True,
-            engine="rust",
             # ── Trading costs ──────────────────────────────
             fees=p.get("fees", 0.0),
             fixed_fees=p.get("fixed_fees", 0.0),

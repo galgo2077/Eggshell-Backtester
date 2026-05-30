@@ -1,0 +1,45 @@
+# ── Layer: source ────────────────────────────────────────────────────────────
+# App source code, runtime ENV, eggshell alias, shell setup
+# Targeted COPY (not COPY . .) so systemd/docker/ changes don't bust this layer
+# Rebuild only when: src/, scripts/, config/, status.sh or entrypoint.sh change
+FROM eggshell-systemd:latest
+
+ENV PYTHONUNBUFFERED=1 \
+    PYTHONDONTWRITEBYTECODE=1 \
+    PYTHONPATH=/eggshell/src:/eggshell/scripts \
+    PATH="/opt/venv/bin:$PATH" \
+    MPLBACKEND=Agg \
+    OLLAMA_HOST=http://localhost:11434 \
+    EGGSHELL_HOST=localhost \
+    OLLAMA_KEEP_ALIVE=-1 \
+    NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility \
+    NUMEXPR_MAX_THREADS=64
+
+WORKDIR /eggshell
+
+COPY src/        /eggshell/src/
+COPY scripts/    /eggshell/scripts/
+COPY config/     /eggshell/config/
+COPY status.sh   /usr/local/bin/status
+COPY entrypoint.sh /entrypoint.sh
+
+RUN chmod +x /usr/local/bin/status /entrypoint.sh \
+    && printf '#!/bin/bash\ncd /eggshell/src && exec python main.py "$@"\n' \
+       > /usr/local/bin/eggshell && chmod +x /usr/local/bin/eggshell \
+    && echo 'export TERM=xterm-256color' >> /etc/bash.bashrc \
+    && echo 'export LANG=C.UTF-8'        >> /etc/bash.bashrc \
+    && echo 'export LC_ALL=C.UTF-8'      >> /etc/bash.bashrc \
+    && echo '[ -x /usr/local/bin/status ] && /usr/local/bin/status' >> /etc/bash.bashrc \
+    && printf '%s\n' \
+       '# Auto-launch btop in a horizontal tmux split on SSH login' \
+       'if [ -n "$SSH_CONNECTION" ] && [ -z "$TMUX" ]; then' \
+       '    if ! tmux has-session -t monitor 2>/dev/null; then' \
+       '        COLS=$(tput cols 2>/dev/null || echo 200)' \
+       '        LINES=$(tput lines 2>/dev/null || echo 50)' \
+       '        tmux new-session -d -s monitor -x "$COLS" -y "$LINES"' \
+       '        tmux split-window -h -t monitor -l 82 "btop"' \
+       '        tmux select-pane -t monitor:0.0' \
+       '    fi' \
+       '    exec tmux attach -t monitor' \
+       'fi' >> /etc/bash.bashrc

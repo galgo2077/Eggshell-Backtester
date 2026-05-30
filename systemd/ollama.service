@@ -8,6 +8,10 @@ ExecStart=/usr/local/bin/ollama serve
 Restart=always
 RestartSec=5
 Environment=HOME=/root
+Environment=OLLAMA_NUM_PARALLEL=8
+Environment=OLLAMA_FLASH_ATTENTION=1
+Environment=OLLAMA_KV_CACHE_TYPE=q8_0
+Environment=OLLAMA_MAX_QUEUE=512
 
 [Install]
 WantedBy=multi-user.target

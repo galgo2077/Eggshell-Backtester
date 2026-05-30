@@ -1,60 +1,81 @@
 %% Eggshell Backtester — Docker Architecture
 %% Render at https://mermaid.live
-%% Last updated: 2026-05-23
+%% Last updated: 2026-05-29
 
 flowchart TD
 
-  subgraph IMAGES["Layered Images — each pushed independently to GHCR"]
+  subgraph INFRA["Infrastructure Layers — slow-changing, heavily cached"]
     direction TB
-    L1["eggshell-base<br/>docker/Dockerfile.base<br/>ubuntu:24.04 · systemd · python3-venv<br/>build-essential · curl · git · Node.js 20"]
-    L2["eggshell-ollama<br/>docker/Dockerfile.ollama<br/>Ollama binary (install.sh)<br/>npm install -g n8n"]
-    L3["eggshell-models<br/>docker/Dockerfile.models<br/>ollama pull qwen2.5:0.5b<br/>ollama pull 0xroyce/plutus:latest<br/>models frozen into layer"]
-    L4["eggshell-python<br/>docker/Dockerfile.python<br/>python3 -m venv /opt/venv<br/>pip install requirements.txt<br/>pyarrow ›› fastparquet ›› disabled"]
-    L5["eggshell-fastfetch<br/>docker/Dockerfile.fastfetch<br/>apt: fastfetch"]
-    L6["eggshell-btop<br/>docker/Dockerfile.btop<br/>apt: btop"]
-    L7["eggshell-tmux<br/>docker/Dockerfile.tmux<br/>apt: tmux"]
-    L8["eggshell-nvidia<br/>docker/Dockerfile.nvidia<br/>apt: nvidia-utils-550 (nvidia-smi)<br/>runtime: --gpus all"]
-    L9["eggshell  ·  FINAL IMAGE<br/>Dockerfile (root)<br/>COPY src · systemd units · eggshell alias<br/>systemctl enable ollama n8n reports-server<br/>CMD /sbin/init"]
+    L1["eggshell-base<br/>docker/Dockerfile.base<br/>ubuntu:24.04 · systemd · python3-venv<br/>build-essential · libopenblas · curl · git"]
+    L2["eggshell-ollama<br/>docker/Dockerfile.ollama<br/>Ollama binary (install.sh)"]
+    L3["eggshell-python<br/>docker/Dockerfile.python<br/>python3 -m venv /opt/venv<br/>pip install -r requirements.txt"]
+    L4["eggshell-fastfetch<br/>docker/Dockerfile.fastfetch<br/>apt: fastfetch (GitHub release)"]
+    L5["eggshell-btop<br/>docker/Dockerfile.btop<br/>apt: btop · baked btop.conf profile"]
+    L6["eggshell-tmux<br/>docker/Dockerfile.tmux<br/>apt: tmux · baked .tmux.conf<br/>auto-attach on SSH login"]
+    L7["eggshell-nvidia<br/>docker/Dockerfile.nvidia<br/>apt: pciutils<br/>ENV NVIDIA_VISIBLE_DEVICES=all<br/>ENV NVIDIA_DRIVER_CAPABILITIES=compute,utility"]
+    L8["eggshell-gpu-benchmark<br/>docker/Dockerfile.gpu_benchmark<br/>apt: nvtop<br/>pip: pynvml · gpustat · cupy-cuda12x · nvidia-cublas-cu12<br/>cmd: gpu-benchmark (validation + diagnostics)<br/>cmd: gpu-saturate  (saturation engine)"]
+    L9["eggshell-models<br/>docker/Dockerfile.models<br/>ollama pull qwen2.5:0.5b<br/>ollama pull 0xroyce/plutus:latest<br/>models frozen into image layer"]
 
     L1 --> L2 --> L3 --> L4 --> L5 --> L6 --> L7 --> L8 --> L9
   end
 
-  subgraph BUILD["Build — Makefile"]
-    MK["make all          # build full chain<br/>make app           # build only final image<br/>make python        # rebuild from python layer down<br/>make push          # push all images to GHCR"]
+  subgraph APP["App Layers — fast-changing, targeted COPYs"]
+    direction TB
+    A1["eggshell-systemd<br/>docker/Dockerfile.systemd<br/>COPY systemd/*.service → /etc/systemd/system/<br/>ollama.service · reports-server.service · model-pull.service<br/>OLLAMA_NUM_PARALLEL=8 · FLASH_ATTENTION=1 · KV_CACHE_TYPE=q8_0"]
+    A2["eggshell-source<br/>docker/Dockerfile.source<br/>COPY src/ scripts/ config/ status.sh entrypoint.sh<br/>ENV PYTHONPATH · OLLAMA_HOST · NVIDIA_* · NUMEXPR_MAX_THREADS<br/>alias: eggshell → python src/main.py"]
+    A3["eggshell-data<br/>docker/Dockerfile.data<br/>ARG BUILD_DATE_1D / 4H / 1H / 15M  ← cache-busted per interval<br/>python scripts/prefetch_data.py --interval 1d/4h/1h/15m<br/>bakes Binance OHLCV cache into image"]
+    A4["ghcr.io/galgo2077/eggshell · FINAL<br/>Dockerfile (root)<br/>HEALTHCHECK: curl ollama :11434<br/>ENTRYPOINT: /entrypoint.sh"]
+
+    A1 --> A2 --> A3 --> A4
   end
 
-  subgraph RUNTIME["Container Runtime · systemd as PID 1"]
-    INIT["/sbin/init · systemd"]
+  L9 --> A1
 
-    subgraph SVCS["Managed systemd Services"]
-      OLLS["ollama.service<br/>/usr/local/bin/ollama serve<br/>Restart=always · port 11434"]
-      N8NS["n8n.service<br/>/usr/local/bin/n8n start<br/>Restart=always · port 5678"]
-      REPS["reports-server.service<br/>python3 -m http.server 8080<br/>--directory /eggshell/reports"]
+  subgraph BUILD["Build — Makefile"]
+    direction LR
+    MK1["Infrastructure<br/>make base → ollama → python<br/>→ fastfetch → btop → tmux<br/>→ nvidia → gpu-benchmark → models"]
+    MK2["App<br/>make systemd → source → data → app<br/>─── or ───<br/>make eggshell   (source + data + app only)"]
+    MK3["Ops<br/>make run   # docker run --gpus all -p 11435:11434 -p 8081:8080<br/>make exec  # docker exec -it eggshell bash<br/>make stop<br/>make gpu-benchmark-run<br/>make status<br/>make push"]
+
+    MK1 --- MK2 --- MK3
+  end
+
+  subgraph RUNTIME["Container Runtime"]
+    ENTRY["/entrypoint.sh · auto-detects init mode"]
+
+    subgraph PRIV["--privileged: systemd as PID 1"]
+      INIT["/sbin/init · systemd"]
+      OLLS["ollama.service · :11434<br/>OLLAMA_NUM_PARALLEL=8<br/>OLLAMA_FLASH_ATTENTION=1<br/>OLLAMA_KV_CACHE_TYPE=q8_0<br/>OLLAMA_MAX_QUEUE=512"]
+      REPS["reports-server.service · :8080<br/>python3 -m http.server 8080"]
+      INIT --> OLLS & REPS
     end
 
-    INIT --> OLLS & N8NS & REPS
+    subgraph NPRIV["no --privileged: direct start"]
+      OLLAD["ollama serve (background)<br/>same GPU env vars"]
+      REPSD["http.server 8080 (background)"]
+    end
+
+    ENTRY --> PRIV & NPRIV
   end
 
-  subgraph MODELS["AI Models · Baked in eggshell-models"]
-    QWEN["qwen2.5:0.5b · fast general LLM<br/>used by ElliotBollinger strategy"]
-    PLUT["0xroyce/plutus:latest · finance-tuned<br/>used by SentimentProxy via n8n"]
+  subgraph GPU["GPU Tools (standalone or in-container)"]
+    G1["gpu-benchmark   # full CUDA validation + cuBLAS benchmarks"]
+    G2["gpu-saturate    # concurrent inference saturation engine<br/>--mode light / balanced / aggressive / maximum<br/>--workers N  --duration SEC  --model NAME"]
+  end
+
+  subgraph MODELS["AI Models · baked in eggshell-models"]
+    M1["qwen2.5:0.5b  ← fast general inference"]
+    M2["0xroyce/plutus:latest  ← finance-tuned"]
   end
 
   subgraph PORTS["Exposed Ports"]
-    P1[":11434  Ollama inference API"]
-    P2[":5678   n8n workflow UI + webhooks"]
-    P3[":8080   Reports HTML server"]
+    P1[":11434  Ollama API"]
+    P2[":8080   Reports server"]
   end
 
-  subgraph VOLS["Recommended Volumes  (docker run -v)"]
-    V1["-v ./cache:/eggshell/src/binance_service/cache"]
-    V2["-v ./reports:/eggshell/reports"]
-  end
-
-  L9 --> INIT
-  L3 --> MODELS
-  OLLS --> MODELS
+  A4 --> ENTRY
+  L9 --> MODELS
+  OLLS & OLLAD --> MODELS
   OLLS --> P1
-  N8NS --> P2
-  REPS --> P3
-  L9 --> VOLS
+  REPS & REPSD --> P2
+  L8 --> GPU

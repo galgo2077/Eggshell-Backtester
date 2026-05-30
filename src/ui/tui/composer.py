@@ -38,16 +38,14 @@ from graphs.montecarlo_graphs import generate_montecarlo_graphs
 from .theme.styles import APP_CSS
 from .state.app_state import AppState
 from .components.calendar import CalendarWidget
-from .components.modals import SaveNameModal, LoadBacktestModal, AllocModal
+from .components.backtest_timer import BacktestTimer
+from .components.modals import SaveNameModal, LoadBacktestModal, AllocModal, ChartUrlModal
 from .utils.helpers import _REPORTS_ROOT, _chart_url, _tip, ensure_chart_server
 from .utils.ollama import (
     _SETUP_MODEL, _ollama_model_available, _ollama_generate,
     _highlight_keywords, _list_ollama_models,
 )
-from .utils.ai_analyzer import (
-    compute_scores, detect_patterns, build_recommendations,
-    build_analysis_prompt, build_scores_markup, build_full_markup,
-)
+from ai.orchestrator import AIAnalysisOrchestrator
 from .tabs.strategy_picker_tab import StrategyPickerTab
 from .tabs.data_tab import DataTab
 from .tabs.strategy_params_tab import StrategyParamsTab
@@ -58,6 +56,7 @@ from .tabs.stats_tab import StatsTab
 from .tabs.pie_tab import PieTab
 from .tabs.setup_tab import SetupTab
 from .tabs.logs_tab import LogsTab
+from .tabs.reasoning_tab import ReasoningTab, generate_eb_reasoning
 
 
 CHART_LAYOUTS = {
@@ -166,7 +165,20 @@ class BacktestApp(App):
         chart_base = ensure_chart_server()
         self._debug(f"chart server ready: {chart_base}")
         self.call_after_refresh(self._load_ui_settings)
+        self.call_after_refresh(self._init_eb_tab_state)
         Thread(target=self._check_ollama_setup, daemon=True).start()
+        Thread(target=self._warmup_inference_pool, daemon=True).start()
+
+    def _init_eb_tab_state(self) -> None:
+        try:
+            strat = str(self.query_one("#strategy-select", Select).value)
+            if strat != "ELLIOT_BOLLINGER":
+                self.query_one("#results-tabs", TabbedContent).hide_tab("tab-reasoning-pane")
+        except Exception:
+            try:
+                self.query_one("#results-tabs", TabbedContent).hide_tab("tab-reasoning-pane")
+            except Exception:
+                pass
 
     # ── Layout ────────────────────────────────────────────────────────────────
 
@@ -184,6 +196,7 @@ class BacktestApp(App):
 
                 with Vertical(id="config-footer"):
                     yield Label("READY", id="status-label")
+                    yield Static("", id="mc-progress-panel")
                     yield ProgressBar(id="main-progress", total=100, show_eta=True)
                     with Horizontal(id="btn-row"):
                         yield Button("EXECUTE SEQUENCE (R)", id="run-btn", variant="primary")
@@ -207,19 +220,17 @@ class BacktestApp(App):
                     with Vertical(classes="stat-container"):
                         yield Label("TOTAL ROI")
                         yield Label("0.00%", id="stat-return", classes="stat-value")
-                        yield Static("░" * 20, id="bar-return", classes="stat-bar")
                     with Vertical(classes="stat-container"):
                         yield Label("WIN RATE")
                         yield Label("0.0%", id="stat-winrate", classes="stat-value")
-                        yield Static("░" * 20, id="bar-winrate", classes="stat-bar")
                     with Vertical(classes="stat-container"):
                         yield Label("TRADES")
                         yield Label("0", id="stat-trades", classes="stat-value")
-                        yield Static("░" * 20, id="bar-trades", classes="stat-bar")
                     with Vertical(classes="stat-container"):
                         yield Label("P&L")
                         yield Label("$0.00", id="stat-final", classes="stat-value")
-                        yield Static("░" * 20, id="bar-final", classes="stat-bar")
+
+                yield BacktestTimer()
 
                 with TabbedContent(id="results-tabs"):
                     yield TradesTab()
@@ -228,6 +239,7 @@ class BacktestApp(App):
                     yield PieTab()
                     yield SetupTab()
                     yield LogsTab()
+                    yield ReasoningTab()
         yield Footer()
 
     # ── Strategy rebuild ──────────────────────────────────────────────────────
@@ -377,6 +389,26 @@ class BacktestApp(App):
                     dual_panel.add_class("hidden")
             except Exception:
                 pass
+            self._update_eb_tab_visibility(str(event.value))
+
+    def _update_eb_tab_visibility(self, strategy_name: str) -> None:
+        is_eb = strategy_name == "ELLIOT_BOLLINGER"
+        try:
+            tabbed = self.query_one("#results-tabs", TabbedContent)
+            if is_eb:
+                tabbed.show_tab("tab-reasoning-pane")
+            else:
+                tabbed.hide_tab("tab-reasoning-pane")
+        except Exception:
+            pass
+        try:
+            logs_tab = self.query_one(LogsTab)
+            if is_eb:
+                logs_tab.start_ollama_monitor()
+            else:
+                logs_tab.stop_ollama_monitor()
+        except Exception:
+            pass
 
     @on(Select.Changed, "#opt_dual_strategy_strategy_a")
     def on_dual_a_changed(self, event: Select.Changed) -> None:
@@ -635,6 +667,7 @@ class BacktestApp(App):
         progress.progress = 0
         self.query_one("#results-tabs", TabbedContent).active = "tab-logs"
         self.notify("INITIATING PORTFOLIO SEQUENCE...")
+        self.query_one(BacktestTimer).start_timer()
         Thread(target=self._run_backtest, kwargs=params, daemon=True).start()
 
     # ── Parameter collection ──────────────────────────────────────────────────
@@ -700,6 +733,9 @@ class BacktestApp(App):
                         adv_params[field] = self.state.active_settings[w_id]
                     else:
                         adv_params[field] = info["default"]
+
+            # Pass selected AI model to strategy so EB uses the TUI-selected model.
+            adv_params["AI_MODEL"] = self.state.ai_model or "qwen2.5:0.5b"
 
             if strategy_name == "DUAL_STRATEGY":
                 a_name = adv_params.get("STRATEGY_A", "EMA_CROSS")
@@ -856,7 +892,14 @@ class BacktestApp(App):
     ) -> None:
         _t0  = time.time()
         _pct = [0.0]
-        self.state.last_setup_info   = self._collect_setup_info()
+        setup_info = self._collect_setup_info()
+        # Include strategy-specific params so AI prompts can explain each one.
+        display_params = {
+            k: v for k, v in adv_params.items()
+            if k not in ("AI_MODEL", "PARAMS_A", "PARAMS_B") and not callable(v)
+        }
+        setup_info["adv_params"] = display_params
+        self.state.last_setup_info = setup_info
         self.state.ai_scores_markup  = ""
         self.state.ai_report_markup  = ""
         self.state.ai_analysis_running = False
@@ -884,6 +927,9 @@ class BacktestApp(App):
             unit_label = "ASSET(S)" if run_mode == REAL_MARKET_BACKTEST else "SYNTHETIC SERIES"
             _prog(2); _log(f"[1/3] INITIATING — {len(assets)} {unit_label} / {interval} / {strategy_name}", pause=0.05)
 
+            if strategy_name == "ELLIOT_BOLLINGER":
+                self.app.call_from_thread(lambda: self.query_one(ReasoningTab).clear())
+
             if data_source == "RANDOM_WALK":
                 cfg       = data_config or {}
                 n_bars_rw = cfg.get("n_bars", 1000)
@@ -903,32 +949,109 @@ class BacktestApp(App):
                 base_seed = cfg.get("seed", -1)
                 _prog(5); _log(f"[1/3] MONTE CARLO — {n_sims} paths × {n_bars_mc} bars / {len(assets)} synthetic series", pause=0.04)
 
-                mc_results = []
-                for sim_i in range(n_sims):
-                    if self.state.cancelled:
+                mc_results:   list = []
+                _mc_t0:       float = time.time()
+                _mc_rois:     list[float] = []
+                _mc_last_ui:  list[float] = [0.0]
+                n_cycles      = max(1, n_bars_mc // 100)   # 1 cycle = 100 bars
+                _mc_sim_bar   = [0]   # current bar within the active sim
+                _mc_sim_cycle = [0]   # current cycle within the active sim
+
+                def _mc_panel(done: int, stage: str) -> None:
+                    now = time.time()
+                    if now - _mc_last_ui[0] < 0.08 and done < n_sims:
                         return
-                    sim_seed = (base_seed + sim_i) if base_seed >= 0 else -1
-                    sim_df   = self._generate_synthetic_df(
-                        assets, n_bars_mc, cfg.get("start_price", 100.0),
-                        cfg.get("drift", 0.05), cfg.get("volatility", 2.0),
-                        sim_seed, interval,
+                    _mc_last_ui[0] = now
+
+                    elapsed  = now - _mc_t0
+                    speed    = done / elapsed if elapsed > 0 and done > 0 else 0.0
+                    remain   = (n_sims - done) / speed if speed > 0 else 0.0
+                    pct      = done / n_sims * 100 if n_sims > 0 else 0.0
+                    bar_w    = 20
+                    filled   = int(bar_w * pct / 100)
+                    bar_vis  = "█" * filled + "░" * (bar_w - filled)
+
+                    cur_bar   = _mc_sim_bar[0]
+                    cur_cycle = _mc_sim_cycle[0]
+                    cyc_left  = max(0, n_cycles - cur_cycle)
+
+                    best_s  = f"[bold green]{max(_mc_rois):+.1f}%[/bold green]"   if _mc_rois else "[dim]—[/dim]"
+                    worst_s = f"[bold red]{min(_mc_rois):+.1f}%[/bold red]"       if _mc_rois else "[dim]—[/dim]"
+                    avg_s   = f"[bold]{sum(_mc_rois)/len(_mc_rois):+.1f}%[/bold]" if _mc_rois else "[dim]—[/dim]"
+
+                    e_m, e_s = divmod(int(elapsed), 60)
+                    r_m, r_s = divmod(int(remain),  60)
+                    eta_str  = f"{r_m:02d}:{r_s:02d}" if speed > 0 else "--:--"
+                    spd_s    = f"{speed:.1f}" if speed > 0 else "—"
+
+                    panel = (
+                        f"[bold dim]── MONTE CARLO PROGRESS ──[/bold dim]\n"
+                        f"[cyan]{bar_vis}[/cyan] [bold]{pct:.1f}%[/bold]\n"
+                        f"[dim]Current Path:[/dim]     [bold]{done + 1:,}[/bold] [dim]/ {n_sims:,}[/dim]"
+                        f"  [dim]Paths Remaining:[/dim]  [bold]{max(0, n_sims - done):,}[/bold]\n"
+                        f"[dim]Current Cycle:[/dim]    [bold]{cur_cycle}[/bold] [dim]/ {n_cycles}[/dim]"
+                        f"  [dim]Cycles Remaining:[/dim] [bold]{cyc_left}[/bold]\n"
+                        f"[dim]Current Bar:[/dim]      [bold]{cur_bar:,}[/bold] [dim]/ {n_bars_mc:,}[/dim]\n"
+                        f"[dim]Speed:[/dim] [bold]{spd_s}[/bold][dim] paths/s[/dim]"
+                        f"  [dim]Elapsed:[/dim] [bold]{e_m:02d}:{e_s:02d}[/bold]"
+                        f"  [dim]ETA:[/dim] [bold cyan]{eta_str}[/bold cyan]\n"
+                        f"[dim]Stage:[/dim] [italic]{stage}[/italic]\n"
+                        f"[dim]Best:[/dim] {best_s}"
+                        f"  [dim]Worst:[/dim] {worst_s}"
+                        f"  [dim]Avg:[/dim] {avg_s}"
                     )
-                    _prog(5 + (sim_i / n_sims) * 30)
-                    _log(f"[MC] SIM {sim_i + 1}/{n_sims}", pause=0.0)
-                    sim_signals = []
-                    for sym in assets:
-                        sym_df = sim_df[sim_df["symbol"] == sym]
-                        if sym_df.empty:
-                            continue
-                        try:
-                            sl = SignalLogic(sym_df, **adv_params)
-                            sim_signals.append(sl.df)
-                        except Exception:
-                            continue
-                    if not sim_signals:
-                        continue
-                    unified = pd.concat(sim_signals)
+                    compact = (
+                        f"MC {done + 1:,}/{n_sims:,} ({pct:.0f}%)"
+                        f"  Cycle {cur_cycle}/{n_cycles}  Bar {cur_bar:,}/{n_bars_mc:,}"
+                        f"  ETA {eta_str}"
+                    )
+
+                    def _apply(p=panel, c=compact, v=5 + pct * 0.85):
+                        self.query_one("#mc-progress-panel", Static).update(p)
+                        self.query_one("#status-label", Label).update(c)
+                        self.query_one("#main-progress", ProgressBar).update(progress=v)
+                    self.app.call_from_thread(_apply)
+
+                # Show MC panel
+                self.app.call_from_thread(
+                    lambda: self.query_one("#mc-progress-panel", Static).add_class("visible")
+                )
+                _mc_panel(0, "Initialising simulation engine")
+
+                # ── Determine worker count ────────────────────────────────────
+                # Leave half the cores for Ollama + TUI; cap at 8 to stay sane.
+                import threading as _threading
+                from concurrent.futures import ThreadPoolExecutor as _TPE, as_completed as _as_completed
+                _n_workers = min(8, max(1, (os.cpu_count() or 1) // 2))
+                _mc_lock   = _threading.Lock()
+                _done      = [0]
+
+                # Params injected so EB skips per-block Ollama in MC sims
+                _mc_adv = {**adv_params, "EGGSHELL_MC_MODE": True}
+
+                def _run_one_mc_sim(sim_i: int):
+                    if self.state.cancelled:
+                        return None
+                    sim_seed = (base_seed + sim_i) if base_seed >= 0 else -1
                     try:
+                        sim_df = self._generate_synthetic_df(
+                            assets, n_bars_mc, cfg.get("start_price", 100.0),
+                            cfg.get("drift", 0.05), cfg.get("volatility", 2.0),
+                            sim_seed, interval,
+                        )
+                        sim_signals = []
+                        for sym in assets:
+                            sym_df = sim_df[sim_df["symbol"] == sym]
+                            if sym_df.empty:
+                                continue
+                            try:
+                                sl = SignalLogic(sym_df, **_mc_adv)
+                                sim_signals.append(sl.df)
+                            except Exception:
+                                continue
+                        if not sim_signals:
+                            return None
+                        unified = pd.concat(sim_signals)
                         eng = BacktestEngine(
                             unified, initial_balance=balance, position_size_pct=size,
                             cooldown=cooldown, accumulate=accumulate,
@@ -937,10 +1060,33 @@ class BacktestApp(App):
                             simulation_mode="monte_carlo",
                             generate_charts=False,
                         )
-                        res = eng.run()
-                        mc_results.append((res, eng.trades))
-                    except Exception:
-                        continue
+                        return eng.run(), eng.trades
+                    except Exception as exc:
+                        if sim_i == 0:
+                            self.app.call_from_thread(
+                                lambda e=exc: self.log_status(f"[MC] SIM 1 error: {e}", "error")
+                            )
+                        return None
+
+                _mc_milestone = max(1, n_sims // 10)
+                with _TPE(max_workers=_n_workers) as _pool:
+                    _futures = {_pool.submit(_run_one_mc_sim, i): i for i in range(n_sims)}
+                    for _fut in _as_completed(_futures):
+                        _result = _fut.result()
+                        with _mc_lock:
+                            _done[0] += 1
+                            _d = _done[0]
+                            if _result is not None:
+                                mc_results.append(_result)
+                                _mc_rois.append(_result[0]["total_return_pct"])
+                        _mc_panel(_d, f"Parallel simulations  [{_n_workers} workers]")
+                        if _mc_rois and _d % _mc_milestone == 0:
+                            _b, _w, _a = max(_mc_rois), min(_mc_rois), sum(_mc_rois)/len(_mc_rois)
+                            self.app.call_from_thread(
+                                lambda d=_d, b=_b, w=_w, a=_a: self.log_status(
+                                    f"[MC] {d}/{n_sims} | best {b:+.1f}% | worst {w:+.1f}% | avg {a:+.1f}%", "info"
+                                )
+                            )
 
                 if not mc_results:
                     _log("MONTE CARLO: NO VALID RESULTS", "error", pause=0.04)
@@ -950,10 +1096,13 @@ class BacktestApp(App):
                 wrs  = [r["win_rate"]          for r, _ in mc_results]
                 terminal_values = [r["final_balance"] for r, _ in mc_results]
                 max_dds = [r["max_drawdown_pct"] for r, _ in mc_results]
-                _prog(95)
+
+                _mc_panel(n_sims, "Building confidence intervals")
                 _log(f"[MC] ROI  min:{min(rois):+.2f}%  median:{_np.median(rois):+.2f}%  max:{max(rois):+.2f}%  σ:{_np.std(rois):.2f}%", "info", pause=0.04)
                 _log(f"[MC] WIN RATE  min:{min(wrs):.1f}%  median:{_np.median(wrs):.1f}%  max:{max(wrs):.1f}%", "info", pause=0.04)
                 _log(f"[MC] P(ROI>0) = {sum(1 for r in rois if r > 0) / len(rois) * 100:.1f}%  ({len(mc_results)}/{n_sims} valid sims)", "info", pause=0.04)
+
+                _mc_panel(n_sims, "Generating Monte Carlo charts")
                 sorted_mc = sorted(mc_results, key=lambda x: x[0]["total_return_pct"])
                 med_results, _med_trades = sorted_mc[len(sorted_mc) // 2]
                 proj_root = os.path.dirname(os.path.dirname(os.path.dirname(os.path.dirname(os.path.abspath(__file__)))))
@@ -989,6 +1138,23 @@ class BacktestApp(App):
                         "median_max_drawdown_pct": float(_np.median(max_dds)),
                     },
                 }
+                _mc_total_s  = time.time() - _mc_t0
+                _mc_speed_f  = len(mc_results) / _mc_total_s if _mc_total_s > 0 else 0.0
+                _mc_tm, _mc_ts = divmod(int(_mc_total_s), 60)
+                _mc_summary = (
+                    f"[bold dim]── MONTE CARLO COMPLETED ──[/bold dim]\n"
+                    f"[dim]Simulations[/dim] [bold green]{len(mc_results):,}/{n_sims:,}[/bold green]\n"
+                    f"[dim]Time[/dim] [bold]{_mc_tm:02d}:{_mc_ts:02d}[/bold]"
+                    f"  [dim]Speed[/dim] [bold]{_mc_speed_f:.1f}[/bold][dim]/s[/dim]\n"
+                    f"[dim]Best ROI[/dim]   [bold green]{max(rois):+.1f}%[/bold green]\n"
+                    f"[dim]Worst ROI[/dim]  [bold red]{min(rois):+.1f}%[/bold red]\n"
+                    f"[dim]Mean ROI[/dim]   [bold]{float(_np.mean(rois)):+.1f}%[/bold]\n"
+                    f"[dim]Median ROI[/dim] [bold cyan]{float(_np.median(rois)):+.1f}%[/bold cyan]\n"
+                    f"[dim]P(ROI>0)[/dim]   [bold]{sum(1 for r in rois if r > 0)/len(rois)*100:.0f}%[/bold]"
+                )
+                self.app.call_from_thread(
+                    lambda s=_mc_summary: self.query_one("#mc-progress-panel", Static).update(s)
+                )
                 _prog(100)
                 _log("[MC] COMPLETE — showing probabilistic distribution", "success", pause=0.06)
                 self.state.run_final_status = (
@@ -996,7 +1162,7 @@ class BacktestApp(App):
                     f"median ROI {_np.median(rois):+.2f}% | "
                     f"P(>0) {sum(1 for r in rois if r > 0)/len(rois)*100:.0f}%[/bold green]"
                 )
-                self.app.call_from_thread(self._update_results, aggregate_results, [])
+                self.app.call_from_thread(self._update_results, aggregate_results, [], time.time() - _t0)
                 return
 
             else:  # REAL
@@ -1042,12 +1208,28 @@ class BacktestApp(App):
                 def on_sub_progress(pct: float, msg: str = None, _idx=asset_idx):
                     if self.state.cancelled:
                         return
-                    _prog(44 + (_idx / num_assets) * 24 + (24.0 / num_assets) * pct)
+                    if pct is not None:
+                        _prog(44 + (_idx / num_assets) * 24 + (24.0 / num_assets) * pct)
                     if msg:
                         _log(f"[2/3] {msg}", pause=0.02)
 
                 sl = SignalLogic(symbol_df, on_progress=on_sub_progress, **adv_params)
                 all_signals.append(sl.df)
+
+                if strategy_name == "ELLIOT_BOLLINGER":
+                    _eb_events = generate_eb_reasoning(symbol, symbol_df, sl.df)
+                    for _ev in _eb_events:
+                        self.app.call_from_thread(
+                            lambda e=_ev: self.query_one(ReasoningTab).append_event(e)
+                        )
+                    if _eb_events and sl.df is not None and "buy" in sl.df.columns:
+                        _buy_pct = float(sl.df["buy"].sum()) / max(len(sl.df), 1) * 100
+                        _conf = min(95.0, 50.0 + _buy_pct * 5)
+                        self.app.call_from_thread(
+                            lambda c=_conf: self.query_one(ReasoningTab).set_confidence(
+                                "Signal confidence", c
+                            )
+                        )
 
             if not all_signals:
                 _log("NO MARKET DATA TO PROCESS", "error", pause=0.04)
@@ -1090,7 +1272,7 @@ class BacktestApp(App):
             _prog(100)
             _log(f"[3/3] BACKTEST COMPLETE — {trades_n} TRADES | ROI {roi:+.2f}% | {elapsed_total:.1f}s", "success", pause=0.06)
             self.state.run_final_status = f"[bold green]DONE — {trades_n} TRADES | ROI {roi:+.2f}% | {elapsed_total:.1f}s[/bold green]"
-            self.app.call_from_thread(self._update_results, results, engine.trades)
+            self.app.call_from_thread(self._update_results, results, engine.trades, elapsed_total)
 
         except Exception as e:
             import traceback
@@ -1112,13 +1294,16 @@ class BacktestApp(App):
         run_btn.label    = "EXECUTE SEQUENCE (R)"
         can_btn.remove_class("visible")
         self.query_one("#main-progress", ProgressBar).remove_class("visible")
+        self.query_one(BacktestTimer).stop_timer()
+        self.query_one("#mc-progress-panel", Static).remove_class("visible")
+        self.query_one("#mc-progress-panel", Static).update("")
         final = self.state.run_final_status
         self.query_one("#status-label", Label).update(final if final else "READY")
         self.state.run_final_status = None
 
     # ── Results update ────────────────────────────────────────────────────────
 
-    def _update_results(self, results: dict, trades: list) -> None:
+    def _update_results(self, results: dict, trades: list, elapsed: float = 0.0) -> None:
         mode = normalize_mode(results.get("execution_mode") or results.get("data_source") or self.state.last_setup_info.get("data_source"))
         roi     = results["total_return_pct"]
         wr      = results["win_rate"]
@@ -1137,8 +1322,11 @@ class BacktestApp(App):
         pnl_label.update(f"${pnl_val:.2f}")
         pnl_label.styles.color = "#ff0000" if pnl_val < 0 else "#00ff00"
 
-        self.query_one("#bar-return",  Static).update(self._fill_bar(roi, 2.0))
-        self.query_one("#bar-winrate", Static).update(self._fill_bar(wr,  5.0))
+        self.query_one(BacktestTimer).stop_timer(elapsed if elapsed else None)
+
+        # Automatically trigger POST-EXECUTION analysis
+        if not self.state.ai_analysis_running:
+            Thread(target=self._run_ai_analysis, daemon=True).start()
 
         # Trades / scenario table
         table = self.query_one("#trades-table", DataTable)
@@ -1533,11 +1721,30 @@ class BacktestApp(App):
             self.notify("Chart file not found.", severity="warning")
             return
         url = _chart_url(file_path, anchor)
+        if self._try_copy_to_clipboard(url):
+            self.notify("URL copied to clipboard!", severity="information", timeout=3)
+        self.push_screen(ChartUrlModal(url))
+
+    @staticmethod
+    def _try_copy_to_clipboard(text: str) -> bool:
+        import subprocess
+        for cmd, stdin in [
+            (["wl-copy"],                                      text.encode()),
+            (["xclip", "-selection", "clipboard"],             text.encode()),
+            (["xsel", "--clipboard", "--input"],               text.encode()),
+        ]:
+            try:
+                subprocess.run(cmd, input=stdin, check=True, timeout=2, capture_output=True)
+                return True
+            except Exception:
+                pass
         try:
-            webbrowser.open(url)
+            import pyperclip
+            pyperclip.copy(text)
+            return True
         except Exception:
             pass
-        self.notify(f"Open in browser:\n{url}", severity="information", timeout=30)
+        return False
 
     # ── Global button handler ─────────────────────────────────────────────────
 
@@ -1814,17 +2021,13 @@ class BacktestApp(App):
 
     # ── Static helpers ────────────────────────────────────────────────────────
 
-    @staticmethod
-    def _fill_bar(value: float, scale: float, width: int = 20) -> str:
-        fill = max(0, min(width, int(value / scale)))
-        return "█" * fill + "░" * (width - fill)
-
     # ── AI tab ────────────────────────────────────────────────────────────────
 
     def _check_ollama_setup(self) -> None:
         """Check Ollama availability on startup and populate the model selector."""
         models    = _list_ollama_models()
-        available = any(m.startswith(_SETUP_MODEL.split(":")[0]) for m in models)
+        # Any installed model is sufficient — do NOT require "plutus" specifically.
+        available = len(models) > 0
         self.state.ollama_setup_ok = available
         if models:
             # Keep whatever is currently selected if it's still valid; else default
@@ -1839,6 +2042,36 @@ class BacktestApp(App):
                 except Exception:
                     pass
             self.call_from_thread(_populate)
+            # Advise on GPU utilization based on model size
+            def _log_model_advice(m=default, ms=models):
+                self.log_status(f"[AI] Ollama ready — model: {m}", "success")
+                # Rough size heuristic from model name
+                name_lower = m.lower()
+                is_small = any(x in name_lower for x in ("0.5b", "1b", "1.5b", "0.5", "0.6"))
+                is_large = any(x in name_lower for x in ("7b", "8b", "13b", "14b", "70b", "plutus"))
+                if is_small:
+                    self.log_status(
+                        f"[GPU] {m} is a sub-1B model — GPU util ceiling ~25-35%. "
+                        "For higher utilization select a 7B+ model (e.g. plutus, llama3.2).",
+                        "warning"
+                    )
+                elif is_large:
+                    self.log_status(
+                        f"[GPU] {m} is a 7B+ model — expect 60-80% GPU utilization during inference.",
+                        "info"
+                    )
+            self.call_from_thread(_log_model_advice)
+        else:
+            self.call_from_thread(
+                lambda: self.log_status("[AI] Ollama OFFLINE — no models found. AI analysis disabled.", "error")
+            )
+            def _hide_tab():
+                try:
+                    self.query_one(SetupTab).add_class("hidden")
+                    self.query_one("#results-tabs", TabbedContent).remove_pane("tab-setup")
+                except Exception:
+                    pass
+            self.call_from_thread(_hide_tab)
 
     def _collect_setup_info(self) -> dict:
         def _sv(wid, default=""):
@@ -1893,39 +2126,161 @@ class BacktestApp(App):
             "allocation":   dict(self.state.alloc_values),
         }
 
-    def _refresh_setup_tab(self) -> None:
-        """Called when the AI tab is activated. Always triggers a fresh analysis run."""
-        if not self.state.last_results:
-            def _placeholder():
+    def _run_setup_analysis(self) -> None:
+        setup_info = self._collect_setup_info()
+        import json
+        setup_hash = hash(json.dumps(setup_info, sort_keys=True))
+        if getattr(self.state, "last_setup_hash", None) == setup_hash:
+            return
+        
+        self.state.last_setup_hash = setup_hash
+        self.state.last_setup_info = setup_info
+
+        def _do_analysis():
+            try:
+                setup_tab = self.query_one(SetupTab)
+                self.app.call_from_thread(lambda: setup_tab.set_phase("SETUP ANALYSIS"))
+
+                setup_analysis = AIAnalysisOrchestrator.analyze_setup(setup_info)
+                self.state.last_setup_risks = setup_analysis.get("risks", [])
+
+                scores_markup = AIAnalysisOrchestrator.build_scores_markup(setup_analysis["scores"], is_setup=True)
+
+                enhanced_text = ""
+                model = self.state.ai_model
+
+                if not self.state.ollama_setup_ok:
+                    self.app.call_from_thread(lambda: setup_tab.set_phase("FAILED", is_error=True))
+                    self.app.call_from_thread(lambda: self.log_status("[AI] SETUP skipped — ollama_setup_ok=False (no models?)", "warning"))
+                    enhanced_text = "[red]AI ERROR REPORT[/red]\nAI model unavailable."
+                elif model:
+                    self.app.call_from_thread(lambda m=model: self.log_status(f"[AI REQUEST START] setup analysis → {m}", "info"))
+                    self.app.call_from_thread(lambda m=model: setup_tab.update_pre_execution("", f"[dim]⏳ Streaming from {m}…[/dim]"))
+                    try:
+                        prompt = AIAnalysisOrchestrator.build_setup_prompt(setup_info)
+
+                        token_buf: list[str] = []
+                        _last_flush          = [0.0]
+
+                        def _on_token(tok: str) -> None:
+                            token_buf.append(tok)
+                            now = __import__("time").monotonic()
+                            if now - _last_flush[0] >= 0.3:
+                                _last_flush[0] = now
+                                partial = "".join(token_buf).strip()
+                                if partial:
+                                    partial_markup = AIAnalysisOrchestrator.build_full_markup(
+                                        {}, [], setup_info, setup_analysis["risks"], [],
+                                        partial + "[blink]▋[/blink]",
+                                        is_setup=True
+                                    )
+                                    self.app.call_from_thread(
+                                        lambda sm=scores_markup, fm=partial_markup:
+                                            self.query_one(SetupTab).update_pre_execution(sm, fm)
+                                        if True else None
+                                    )
+
+                        try:
+                            from .utils.inference_pool import pool
+                            pool.start(model=model, n_workers=2)
+                            fut = pool.submit(prompt, model=model, on_token=_on_token)
+                            self.app.call_from_thread(lambda: self.log_status("[AI REQUEST SENT] setup prompt queued to InferencePool", "info"))
+                            raw = fut.result()  # no timeout — let Ollama finish naturally
+                            enhanced_text = raw.strip() if raw else "".join(token_buf).strip()
+                            self.app.call_from_thread(lambda n=len(enhanced_text): self.log_status(f"[AI RESPONSE RECEIVED] setup — {n} chars", "success"))
+                        except Exception as pool_exc:
+                            self.app.call_from_thread(lambda e=pool_exc: self.log_status(f"[AI] InferencePool failed ({e}), falling back to direct call", "warning"))
+                            raw = _ollama_generate(prompt, model=model, on_token=_on_token)
+                            enhanced_text = raw.strip() if raw else "".join(token_buf).strip()
+                            self.app.call_from_thread(lambda n=len(enhanced_text): self.log_status(f"[AI RESPONSE RECEIVED] setup (direct) — {n} chars", "success"))
+
+                    except Exception as e:
+                        self.app.call_from_thread(lambda: setup_tab.set_phase("FAILED", is_error=True))
+                        self.app.call_from_thread(lambda err=e: self.log_status(f"[AI REQUEST FAILED] setup: {err}", "error"))
+                        enhanced_text = f"[red]AI ERROR REPORT[/red]\n{e}"
+
+                if "AI ERROR REPORT" not in enhanced_text:
+                    self.app.call_from_thread(lambda: setup_tab.set_phase("SETUP ANALYSIS COMPLETE"))
+
+                content_markup = AIAnalysisOrchestrator.build_full_markup(
+                    {}, [], setup_info, setup_analysis["risks"], [], enhanced_text, is_setup=True
+                )
+                
+                self.app.call_from_thread(lambda: setup_tab.update_pre_execution(scores_markup, content_markup))
+
+            except Exception:
                 try:
-                    self.query_one("#setup-status",  Static).update("")
-                    self.query_one("#setup-scores",  Static).update("")
-                    self.query_one("#setup-content", Static).update(
-                        "[dim]Run a backtest to generate AI analysis.[/dim]"
-                    )
+                    setup_tab = self.query_one(SetupTab)
+                    self.app.call_from_thread(lambda: setup_tab.update_pre_execution("", "Setup analysis unavailable."))
+                    self.app.call_from_thread(lambda: setup_tab.set_phase("FAILED", is_error=True))
                 except Exception:
                     pass
-            self.call_after_refresh(_placeholder)
-            return
 
-        if not self.state.ai_analysis_running:
-            self.state.ai_scores_markup = ""
-            self.state.ai_report_markup = ""
-            Thread(target=self._run_ai_analysis, daemon=True).start()
+        Thread(target=_do_analysis, daemon=True).start()
+
+    def _refresh_setup_tab(self) -> None:
+        """Called when the AI tab is activated. Only triggers a fresh setup analysis if hash changed."""
+        self._run_setup_analysis()
+
+    def _warmup_inference_pool(self) -> None:
+        """
+        Seed the InferencePool KV-cache prefix on app startup.
+
+        Runs in a background daemon thread from on_mount(). Waits briefly for
+        _check_ollama_setup (started concurrently) to discover and set the correct
+        model before seeding the KV-cache — avoids warming up "plutus" when the
+        user has a different model installed.
+        """
+        import time as _time
+        # Let _check_ollama_setup populate ai_model before we start.
+        # It runs one HTTP request to /api/tags — typically < 200 ms.
+        deadline = _time.monotonic() + 10.0
+        while _time.monotonic() < deadline:
+            m = self.state.ai_model
+            if m and m != _SETUP_MODEL:
+                break
+            _time.sleep(0.25)
+        try:
+            from .utils.inference_pool import pool
+            models = _list_ollama_models()
+            if not models:
+                return
+            model = self.state.ai_model if self.state.ai_model in models else models[0]
+            pool.start(model=model, n_workers=2)
+            pool.warmup(model=model)
+            self._debug(f"InferencePool warmed up — KV-cache prefix seeded [{model}]")
+            self.call_from_thread(
+                lambda m=model: self.log_status(f"[AI] InferencePool ready — KV-cache warm [{m}]", "info")
+            )
+        except Exception as exc:
+            self._debug(f"InferencePool warmup skipped: {exc}")
 
     def _run_ai_analysis(self) -> None:
-        """Background worker: compute scores, detect patterns, optionally call Ollama."""
+        """
+        Background worker: compute scores, detect patterns, call Ollama via
+        the InferencePool with live streaming token output to the UI.
+
+        v2 changes
+        ----------
+        - Submits the prompt to InferencePool instead of calling _ollama_generate
+          directly, so the pool's persistent workers handle the request without
+          spawning a new HTTP connection each time.
+        - Tokens stream live to the AI tab as they arrive — the user sees output
+          start in < 1 second after the backtest completes.
+        - Falls back to direct _ollama_generate() if InferencePool is unavailable.
+        """
         if self.state.ai_analysis_running:
             return
         self.state.ai_analysis_running = True
-
+        
         def _set_status(msg: str):
             try:
-                self.query_one("#setup-status", Static).update(msg)
+                self.query_one(SetupTab).update_post_execution(msg, "", "")
             except Exception:
                 pass
 
         self.call_from_thread(lambda: (
+            self.query_one(SetupTab).set_phase("RESULT ANALYSIS RUNNING"),
             _set_status("[dim]⏳ Analyzing backtest…[/dim]"),
         ))
 
@@ -1934,27 +2289,76 @@ class BacktestApp(App):
             trades     = self.state.last_trades
             setup_info = self.state.last_setup_info
 
-            scores   = compute_scores(results, trades, setup_info)
-            patterns = detect_patterns(results, trades, setup_info)
-            recs     = build_recommendations(scores, patterns, results, setup_info)
+            # Run rule-based orchestrator (fast — no GPU)
+            post_analysis = AIAnalysisOrchestrator.analyze_results(results, trades, setup_info)
+            scores   = post_analysis["scores"]
+            patterns = post_analysis["patterns"]
+            recs     = post_analysis["recommendations"]
 
-            scores_markup = build_scores_markup(scores, setup_info)
+            setup_risks       = getattr(self.state, "last_setup_risks", [])
+            combined_feedback = AIAnalysisOrchestrator.generate_combined_feedback(setup_risks, patterns)
+            scores_markup     = AIAnalysisOrchestrator.build_scores_markup(scores, setup_info)
 
             enhanced_text = ""
             model = self.state.ai_model
-            if self.state.ollama_setup_ok or model:
+
+            if not self.state.ollama_setup_ok:
+                self.call_from_thread(lambda: self.query_one(SetupTab).set_phase("FAILED", is_error=True))
+                self.call_from_thread(lambda: self.log_status("[AI] RESULT ANALYSIS skipped — ollama_setup_ok=False (no models?)", "warning"))
+                enhanced_text = "[red]AI ERROR REPORT[/red]\nAI model unavailable."
+            elif model:
+                self.call_from_thread(lambda m=model: self.log_status(f"[AI REQUEST START] result analysis → {m}", "info"))
                 self.call_from_thread(
-                    lambda m=model: _set_status(f"[dim]⏳ Asking {m}…[/dim]")
+                    lambda m=model: _set_status(f"[dim]⏳ Streaming from {m}…[/dim]")
                 )
                 try:
-                    prompt = build_analysis_prompt(results, trades, setup_info)
-                    raw    = _ollama_generate(prompt, model=model, timeout=60)
-                    enhanced_text = raw.strip()
-                except Exception:
-                    enhanced_text = ""
+                    prompt = AIAnalysisOrchestrator.build_analysis_prompt(results, trades, setup_info)
 
-            report_markup = build_full_markup(
-                results, trades, setup_info, patterns, recs, enhanced_text
+                    token_buf: list[str] = []
+                    _last_flush          = [0.0]
+
+                    def _on_token(tok: str) -> None:
+                        token_buf.append(tok)
+                        now = __import__("time").monotonic()
+                        if now - _last_flush[0] >= 0.3:
+                            _last_flush[0] = now
+                            partial = "".join(token_buf).strip()
+                            if partial:
+                                partial_markup = AIAnalysisOrchestrator.build_full_markup(
+                                    results, trades, setup_info, patterns, recs,
+                                    partial + "[blink]▋[/blink]",
+                                    is_setup=False, combined_feedback=combined_feedback,
+                                )
+                                self.call_from_thread(
+                                    lambda sm=scores_markup, fm=partial_markup:
+                                        self.query_one(SetupTab).update_post_execution("", sm, fm)
+                                    if True else None
+                                )
+
+                    try:
+                        from .utils.inference_pool import pool
+                        pool.start(model=model, n_workers=2)
+                        fut = pool.submit(prompt, model=model, on_token=_on_token)
+                        self.call_from_thread(lambda: self.log_status("[AI REQUEST SENT] result prompt queued to InferencePool", "info"))
+                        raw = fut.result()  # no timeout — let Ollama finish naturally
+                        enhanced_text = raw.strip() if raw else "".join(token_buf).strip()
+                        self.call_from_thread(lambda n=len(enhanced_text): self.log_status(f"[AI RESPONSE RECEIVED] result — {n} chars", "success"))
+                    except Exception as pool_exc:
+                        self.call_from_thread(lambda e=pool_exc: self.log_status(f"[AI] InferencePool failed ({e}), falling back to direct call", "warning"))
+                        raw = _ollama_generate(prompt, model=model, on_token=_on_token)
+                        enhanced_text = raw.strip() if raw else "".join(token_buf).strip()
+                        self.call_from_thread(lambda n=len(enhanced_text): self.log_status(f"[AI RESPONSE RECEIVED] result (direct) — {n} chars", "success"))
+
+                except Exception as e:
+                    self.call_from_thread(lambda: self.query_one(SetupTab).set_phase("FAILED", is_error=True))
+                    enhanced_text = f"[red]AI ERROR REPORT[/red]\n{e}"
+
+            if "AI ERROR REPORT" not in enhanced_text:
+                self.call_from_thread(lambda: self.query_one(SetupTab).set_phase("RESULT ANALYSIS COMPLETE"))
+
+            report_markup = AIAnalysisOrchestrator.build_full_markup(
+                results, trades, setup_info, patterns, recs, enhanced_text,
+                is_setup=False, combined_feedback=combined_feedback
             )
 
             self.state.ai_scores_markup = scores_markup
@@ -1962,14 +2366,12 @@ class BacktestApp(App):
 
             def _update(sm=scores_markup, fm=report_markup):
                 try:
-                    self.query_one("#setup-status",  Static).update("")
-                    self.query_one("#setup-scores",  Static).update(sm)
-                    self.query_one("#setup-content", Static).update(fm)
+                    self.query_one(SetupTab).update_post_execution("", sm, fm)
                 except Exception:
                     pass
             self.call_from_thread(_update)
 
-        except Exception:
-            pass
+        except Exception as e:
+            self.call_from_thread(lambda: self.query_one(SetupTab).set_phase("FAILED", is_error=True))
         finally:
             self.state.ai_analysis_running = False

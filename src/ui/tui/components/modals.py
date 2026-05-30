@@ -1,4 +1,4 @@
-"""Modal dialogs: save-name prompt, load-backtest picker, portfolio allocation editor."""
+"""Modal dialogs: save-name prompt, load-backtest picker, portfolio allocation editor, chart URL."""
 import os
 import re as _re
 
@@ -227,4 +227,67 @@ class AllocModal(ModalScreen):
         if event.button.id == "alloc-modal-ok":
             self._confirm()
         elif event.button.id == "alloc-modal-cancel":
+            self.dismiss(None)
+
+
+class ChartUrlModal(ModalScreen):
+    """Shows the chart URL in a selectable Input — works on headless/remote servers."""
+
+    CSS = """
+    ChartUrlModal { align: center middle; }
+    ChartUrlModal > Vertical {
+        width: 82; height: auto;
+        background: #0d1117; border: heavy #00ffff; padding: 2 3;
+    }
+    ChartUrlModal .modal-title {
+        color: #00ffff; text-style: bold; text-align: center;
+        width: 100%; margin-bottom: 1;
+    }
+    ChartUrlModal .url-label {
+        color: #888888; margin-top: 1; margin-bottom: 1;
+    }
+    ChartUrlModal #chart-url-input {
+        background: #1e293b; color: #00ff00; text-style: bold;
+        border: solid #00ff00; width: 100%; margin-bottom: 1; height: 3;
+    }
+    ChartUrlModal #chart-url-input:focus {
+        border: solid #00ff00;
+    }
+    ChartUrlModal .hint {
+        color: #555555; margin-top: 1; margin-bottom: 1;
+    }
+    ChartUrlModal #chart-url-close {
+        background: #00ffff; color: #000000; text-style: bold;
+        width: 100%; height: 3; margin-top: 1;
+    }
+    ChartUrlModal #chart-url-close:hover { background: #ffffff; }
+    """
+
+    def __init__(self, url: str, **kwargs):
+        super().__init__(**kwargs)
+        self._url = url
+
+    def compose(self) -> ComposeResult:
+        with Vertical():
+            yield Label("CHART URL", classes="modal-title")
+            yield Label("Auto-copied to clipboard  ·  Or select all Ctrl+A and copy Ctrl+C  ·  Close Esc", classes="url-label")
+            yield Input(self._url, id="chart-url-input")
+            yield Label(
+                "Vast.ai SSH tunnel:  ssh -L 8080:localhost:8080 root@<ip> -p <port>\n"
+                "Or expose port 8080 in instance settings and use the public IP.",
+                classes="hint",
+            )
+            yield Button("CLOSE", id="chart-url-close")
+
+    def on_mount(self) -> None:
+        inp = self.query_one("#chart-url-input", Input)
+        inp.focus()
+        inp.action_select_all()
+
+    def on_key(self, event) -> None:
+        if event.key == "escape":
+            self.dismiss(None)
+
+    def on_button_pressed(self, event: Button.Pressed) -> None:
+        if event.button.id == "chart-url-close":
             self.dismiss(None)

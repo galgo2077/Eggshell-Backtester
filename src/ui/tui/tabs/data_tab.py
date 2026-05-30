@@ -313,12 +313,7 @@ class DataTab(TabPane):
         except Exception:
             pass
         try:
-            sw = self.app.query_one("#vbt-sell-at-end", Switch)
-            if mode == "MONTE_CARLO":
-                sw.value    = False
-                sw.disabled = True
-            else:
-                sw.disabled = False
+            self.app.query_one("#vbt-sell-at-end", Switch).disabled = False
         except Exception:
             pass
         try:

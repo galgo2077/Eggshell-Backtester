@@ -4,10 +4,12 @@
 FROM eggshell-ollama:latest
 
 RUN python3 -m venv /opt/venv
-ENV PATH="/opt/venv/bin:$PATH"
+ENV PATH="/opt/venv/bin:$PATH" \
+    PIP_PREFER_BINARY=1 \
+    NPY_USE_BLAS_ILP64=0
 
 WORKDIR /eggshell
 COPY requirements.txt .
 
-RUN pip install --no-cache-dir --upgrade pip && \
-    pip install --no-cache-dir -r requirements.txt
+RUN pip install --no-cache-dir --prefer-binary --upgrade pip && \
+    pip install --no-cache-dir --prefer-binary -r requirements.txt

@@ -1,0 +1,8 @@
+# ── Layer: systemd ────────────────────────────────────────────────────────────
+# Wire systemd service units into the image
+# Rebuild only when: a .service file changes
+FROM eggshell-models:latest
+
+COPY systemd/ollama.service         /etc/systemd/system/ollama.service
+COPY systemd/reports-server.service /etc/systemd/system/reports-server.service
+COPY systemd/model-pull.service     /etc/systemd/system/model-pull.service

@@ -1,8 +1,6 @@
 # ── Layer: ollama ─────────────────────────────────────────────────────────────
-# Ollama binary + n8n workflow automation
-# Rebuild only when: Ollama or n8n version changes
+# Ollama binary
+# Rebuild only when: Ollama version changes
 FROM eggshell-base:latest
 
 RUN curl -fsSL https://ollama.com/install.sh | sh
-
-RUN npm install -g n8n

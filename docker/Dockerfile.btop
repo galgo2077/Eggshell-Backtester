@@ -1,7 +1,17 @@
 # ── Layer: btop ───────────────────────────────────────────────────────────────
-# Resource monitor
-# Rebuild only when: btop version changes
+# Resource monitor — profile: CPU · GPU · RAM + Disk only (no net, no proc)
+# Rebuild only when: btop version or config/btop/btop.conf changes
 FROM eggshell-fastfetch:latest
 
 RUN apt-get update && apt-get install -y --no-install-recommends btop \
     && rm -rf /var/lib/apt/lists/*
+
+# Bake profile: show only cpu, gpu0, mem (mem covers RAM + disk)
+RUN mkdir -p /root/.config/btop
+COPY config/btop/btop.conf /root/.config/btop/btop.conf
+
+# Wrapper: always force UTF-8 so box-drawing chars render correctly in containers
+RUN mv /usr/bin/btop /usr/bin/btop.bin \
+    && printf '#!/bin/bash\nexec env LANG=C.UTF-8 LC_ALL=C.UTF-8 /usr/bin/btop.bin --utf-force "$@"\n' \
+       > /usr/bin/btop \
+    && chmod +x /usr/bin/btop

@@ -1,0 +1,24 @@
+# ── Layer: data ───────────────────────────────────────────────────────────────
+# Pre-fetch market data — one cache-bust ARG per interval.
+# Order: slowest interval first → a daily tick only busts the 1d layer upward,
+# a 15m tick only busts the last layer.
+#
+#   BUILD_DATE_1D  = YYYY-MM-DD           busts once per day
+#   BUILD_DATE_4H  = YYYY-MM-DD-HH        busts every 4 h (hour floored to 0/4/8/12/16/20)
+#   BUILD_DATE_1H  = YYYY-MM-DD-HH        busts every hour
+#   BUILD_DATE_15M = YYYY-MM-DD-HH-MM     busts every 15 min (minute floored to 0/15/30/45)
+FROM eggshell-source:latest
+
+RUN mkdir -p /eggshell/src/binance_service/cache /eggshell/reports
+
+ARG BUILD_DATE_1D=unknown
+RUN echo "[data-1d]  build=${BUILD_DATE_1D}"  && python /eggshell/scripts/prefetch_data.py --interval 1d
+
+ARG BUILD_DATE_4H=unknown
+RUN echo "[data-4h]  build=${BUILD_DATE_4H}"  && python /eggshell/scripts/prefetch_data.py --interval 4h
+
+ARG BUILD_DATE_1H=unknown
+RUN echo "[data-1h]  build=${BUILD_DATE_1H}"  && python /eggshell/scripts/prefetch_data.py --interval 1h
+
+ARG BUILD_DATE_15M=unknown
+RUN echo "[data-15m] build=${BUILD_DATE_15M}" && python /eggshell/scripts/prefetch_data.py --interval 15m

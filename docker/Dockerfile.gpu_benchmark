@@ -1,0 +1,40 @@
+# ── Layer: gpu-benchmark ──────────────────────────────────────────────────────
+# GPU validation, diagnostics, and performance benchmark system.
+# Installs system monitoring tools + Python GPU libs, then bakes the benchmark
+# script so it can be run independently of the final app image:
+#   docker run --rm --gpus all eggshell-gpu-benchmark:latest gpu-benchmark
+#
+# Rebuild only when: monitoring tools or pynvml/gpustat versions change
+FROM eggshell-nvidia:latest
+
+# nvtop — real-time GPU monitor (TUI)
+# nvidia-cuda-toolkit — provides nvcc (CUDA 12.0, ~167 MB, Ubuntu 24.04 universe)
+RUN apt-get update \
+    && apt-get install -y --no-install-recommends nvtop nvidia-cuda-toolkit \
+    && rm -rf /var/lib/apt/lists/*
+
+# GPU Python libraries — injected into the pre-built venv from eggshell-python
+# cupy-cuda12x bundles libcudart so no separate CUDA toolkit install is needed;
+# nvidia-container-toolkit provides libcuda.so.1 (driver) at runtime.
+RUN /opt/venv/bin/pip install --no-cache-dir \
+        "pynvml==11.5.0" \
+        "gpustat==1.1.1" \
+        "cupy-cuda12x" \
+        "nvidia-cublas-cu12"
+
+# Bake scripts into this layer so they are runnable on their own
+COPY scripts/benchmark_gpu.py  /usr/local/lib/benchmark_gpu.py
+COPY scripts/gpu_saturate.py   /usr/local/lib/gpu_saturate.py
+
+# /usr/local/bin/gpu-benchmark — GPU validation + diagnostics
+RUN printf '#!/bin/bash\nexec /opt/venv/bin/python /usr/local/lib/benchmark_gpu.py "$@"\n' \
+        > /usr/local/bin/gpu-benchmark \
+    && chmod +x /usr/local/bin/gpu-benchmark
+
+# /usr/local/bin/gpu-saturate — GPU saturation engine
+RUN printf '#!/bin/bash\nexec /opt/venv/bin/python /usr/local/lib/gpu_saturate.py "$@"\n' \
+        > /usr/local/bin/gpu-saturate \
+    && chmod +x /usr/local/bin/gpu-saturate
+
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility

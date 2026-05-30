@@ -51,9 +51,22 @@ def enable_high_performance_mode() -> None:
         "VECLIB_MAXIMUM_THREADS": threads,
         "MALLOC_ARENA_MAX": "4",
         "PYTHONMALLOC": "malloc",
+        # GPU / CUDA — ensure visibility even when --gpus flag is omitted
+        "NVIDIA_VISIBLE_DEVICES": "all",
+        "CUDA_VISIBLE_DEVICES": "all",
+        # Keep Ollama models loaded in GPU memory permanently (server mode)
+        "OLLAMA_KEEP_ALIVE": "-1",
     }
     for key, value in defaults.items():
         os.environ.setdefault(key, value)
+
+    # Configure numexpr thread count in the running process (env vars alone are
+    # read at import time, so we also call the API directly).
+    try:
+        import numexpr as ne
+        ne.set_num_threads(int(threads))
+    except Exception:
+        pass
 
 
 def gpu_name() -> str:
@@ -75,6 +88,22 @@ def gpu_name() -> str:
         return ""
 
 
+def _has_numexpr() -> bool:
+    try:
+        import numexpr  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
+def _has_bottleneck() -> bool:
+    try:
+        import bottleneck  # noqa: F401
+        return True
+    except ImportError:
+        return False
+
+
 def performance_diagnostics() -> dict[str, object]:
     enable_high_performance_mode()
     gpu = gpu_name()
@@ -86,11 +115,18 @@ def performance_diagnostics() -> dict[str, object]:
         "gpu_detected": bool(gpu),
         "gpu_name": gpu or "None",
         "cuda_enabled": bool(os.environ.get("NVIDIA_VISIBLE_DEVICES", "")) or bool(gpu),
+        "numexpr": _has_numexpr(),
+        "bottleneck": _has_bottleneck(),
     }
 
 
 def diagnostics_lines() -> list[str]:
     info = performance_diagnostics()
+    accel = []
+    if info["numexpr"]:
+        accel.append("numexpr")
+    if info["bottleneck"]:
+        accel.append("bottleneck")
     return [
         "[PERFORMANCE ENGINE]",
         f"CPU Threads Used: {info['cpu_threads']}",
@@ -99,4 +135,5 @@ def diagnostics_lines() -> list[str]:
         f"Parallel Workers: {info['parallel_workers']}",
         f"Vast.ai Mode: {info['vastai']}",
         f"High Performance Mode: {info['high_performance']}",
+        f"Accelerators: {', '.join(accel) if accel else 'none'}",
     ]

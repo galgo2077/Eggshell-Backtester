@@ -1,0 +1,12 @@
+# ── Layer: models ─────────────────────────────────────────────────────────────
+# Bake Ollama models into the image — frozen at build time.
+# ollama serve runs during build (CPU only) just to download blobs.
+# Models are stored in /root/.ollama/models and available at runtime.
+# Rebuild only when: model list or versions change
+FROM eggshell-gpu-benchmark:latest
+
+RUN /usr/local/bin/ollama serve & \
+    until curl -sf http://localhost:11434/api/tags > /dev/null 2>&1; do sleep 2; done && \
+    ollama pull qwen2.5:0.5b && \
+    ollama pull 0xroyce/plutus:latest && \
+    pkill -f "ollama serve" || true

@@ -5,9 +5,11 @@ BOLD='\033[1m'; CYAN='\033[0;36m'; GREEN='\033[0;32m'; RED='\033[0;31m'
 YELLOW='\033[1;33m'; DIM='\033[2m'; RESET='\033[0m'
 
 svc_status() {
-    local name=$1
+    local name=$1 proc=$2
     if systemctl is-active --quiet "$name" 2>/dev/null; then
         echo -e "  ${GREEN}●${RESET} ${BOLD}${name}${RESET}"
+    elif pgrep -f "${proc:-$name}" > /dev/null 2>&1; then
+        echo -e "  ${GREEN}●${RESET} ${BOLD}${name}${RESET}  ${DIM}(direct)${RESET}"
     else
         echo -e "  ${RED}○${RESET} ${BOLD}${name}${RESET}  ${RED}(stopped)${RESET}"
     fi
@@ -40,17 +42,15 @@ fi
 
 # ── Services ──────────────────────────────────────────────────────────────────
 echo -e "\n${CYAN}${BOLD}── Services ────────────────────────────────────────${RESET}"
-svc_status ollama
-svc_status n8n
-svc_status reports-server
+svc_status ollama         "ollama serve"
+svc_status reports-server "http.server 8080"
 
 # ── Ports ─────────────────────────────────────────────────────────────────────
 echo -e "\n${CYAN}${BOLD}── Endpoints ───────────────────────────────────────${RESET}"
 port_status "Ollama   :11434" 11434 "/api/tags"
-port_status "n8n      :5678 " 5678  "/"
 port_status "Reports  :8080 " 8080  "/"
 
 # ── Disk ──────────────────────────────────────────────────────────────────────
 echo -e "\n${CYAN}${BOLD}── Disk ────────────────────────────────────────────${RESET}"
 df -h / /eggshell 2>/dev/null | awk 'NR==1{print "  "$0} NR>1{print "  "$0}'
-read -s GITHUB_TOKEN && export GITHUB_TOKENe "\n${DIM}Run 'eggshell' to launch the backtester TUI.${RESET}\n"
+echo -e "\n${DIM}Run 'eggshell' to launch the backtester TUI.${RESET}\n"

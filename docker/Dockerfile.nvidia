@@ -1,10 +1,17 @@
 # ── Layer: nvidia ─────────────────────────────────────────────────────────────
-# NVIDIA userspace tools: nvidia-smi, nvlink, pciutils
-# On Vast.ai the host driver is bind-mounted — this layer adds the CLI tools.
-# Rebuild only when: driver version target changes
+# GPU env + pciutils only — no pinned nvidia-utils-* package.
+# On Vast.ai (and any host using nvidia-container-toolkit) the correct
+# nvidia-smi is bind-mounted from the host at runtime, matching the actual
+# driver version. Installing a pinned nvidia-utils-NNN here would conflict
+# with a host driver at a different version (e.g. 535 vs 550).
+# Rebuild only when: env vars or pciutils change
 FROM eggshell-tmux:latest
 
 RUN apt-get update && apt-get install -y --no-install-recommends \
         pciutils \
-        nvidia-utils-550 \
     && rm -rf /var/lib/apt/lists/*
+
+# Expose the GPU to CUDA workloads and Ollama inference.
+# NVIDIA_DRIVER_CAPABILITIES=compute enables CUDA; utility enables nvidia-smi.
+ENV NVIDIA_VISIBLE_DEVICES=all \
+    NVIDIA_DRIVER_CAPABILITIES=compute,utility

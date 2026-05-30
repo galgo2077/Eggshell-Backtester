@@ -100,10 +100,10 @@ CalendarWidget {{
 
 _DATA_TABLE = f"""
 DataTable {{ height: 1fr; border: none; background: {BG_DARK}; color: {TEXT_LIGHT}; }}
-.stat-container {{ height: 4; margin-bottom: 1; padding: 0 1; width: 25%; background: {BG_INPUT}; border: solid {BORDER_DIM}; align: center middle; }}
+.stat-container {{ height: 5; margin-bottom: 0; padding: 0 1; width: 25%; background: {BG_INPUT}; border: solid {BORDER_DIM}; align: center middle; }}
 .stat-container Label {{ margin: 0; width: 100%; text-align: center; }}
 .stat-value {{ color: {SUCCESS}; text-style: bold; }}
-.stat-bar {{ background: #222222; color: {SUCCESS}; width: 100%; height: 1; margin-top: 0; }}
+#backtest-timer {{ height: 1; width: 100%; text-align: center; color: {TEXT_DIM}; margin-bottom: 1; }}
 """
 
 _COLLAPSIBLE = f"""
@@ -155,7 +155,7 @@ ProgressBar.visible {{ display: block; height: 2; }}
 """
 
 _CONFIG_FOOTER = f"""
-#stats-row {{ height: 6; margin-bottom: 1; }}
+#stats-row {{ height: 5; margin-bottom: 0; }}
 #config-footer {{
     height: auto;
     border-top: solid {BORDER_DIM};
@@ -170,6 +170,17 @@ _CONFIG_FOOTER = f"""
     margin-bottom: 1;
     text-style: bold;
 }}
+#mc-progress-panel {{
+    display: none;
+    width: 100%;
+    height: auto;
+    color: {PRIMARY};
+    margin-bottom: 1;
+    padding: 0 1;
+    border: solid {BORDER_DIM};
+    background: {BG_DARK};
+}}
+#mc-progress-panel.visible {{ display: block; }}
 #btn-row {{ height: 3; margin-top: 1; }}
 #run-btn {{ width: 1fr; }}
 #cancel-btn {{ width: 12; margin-left: 1; display: none; }}
@@ -181,6 +192,13 @@ _RESULTS = f"""
 #tab-trades {{ padding: 0; }}
 #tab-chart  {{ padding: 0; }}
 #tab-stats  {{ padding: 0 1; }}
+#logs-outer {{ height: 1fr; }}
+#reasoning-outer {{ height: 1fr; padding: 1; }}
+#reasoning-header {{ color: {PRIMARY}; margin-bottom: 1; }}
+#reasoning-confidence {{ color: {TEXT_LIGHT}; height: 1; margin-bottom: 1; }}
+#reasoning-log {{ height: 1fr; border: solid {BORDER_DIM}; }}
+#ollama-status-panel {{ display: none; color: {PRIMARY}; padding: 0 1; height: auto; border-top: solid {BORDER_DIM}; background: {BG_DARK}; }}
+#ollama-status-panel.ollama-visible {{ display: block; }}
 .chart-btn {{ width: 100%; margin: 1 0; display: none; }}
 .chart-btn.visible {{ display: block; }}
 #save-btn {{ width: 100%; margin: 2 0 0 0; background: {WARNING}; color: #000000; text-style: bold; height: 3; display: none; }}
